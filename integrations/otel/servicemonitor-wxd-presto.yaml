@@ -1,0 +1,35 @@
+# Exposes the watsonx.data presto OTel collector's prometheus exporter (:8889) and
+# tells OCP user-workload-monitoring (UWM) Prometheus to scrape it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wxd-presto-otel-metrics
+  namespace: cpd
+  labels:
+    app: wxd-presto-otel
+spec:
+  selector:
+    engineName: <PRESTO_ENGINE>
+    component: ibm-lh-presto-coordinator
+  ports:
+    - name: otel-metrics
+      port: 8889
+      targetPort: 8889
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: wxd-presto-otel
+  namespace: cpd
+  labels:
+    app: wxd-presto-otel
+spec:
+  selector:
+    matchLabels:
+      app: wxd-presto-otel
+  endpoints:
+    - port: otel-metrics
+      interval: 30s
+      path: /metrics
+      scheme: http

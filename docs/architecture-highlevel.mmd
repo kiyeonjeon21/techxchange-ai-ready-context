@@ -1,0 +1,44 @@
+---
+title: Agentic RAG + Knowledge Graph — High-Level
+---
+flowchart LR
+  user(["User"])
+
+  subgraph APP["Chat UI + Agent — rag-ui (FastAPI, OpenShift)"]
+    agent{"LLM Agent<br/>route · retrieve · synthesize"}
+  end
+
+  subgraph RET["Retrieval"]
+    vec["Vector search<br/>(semantic)"]
+    kg["Graph lookup<br/>(relationships)"]
+    sql["SQL query<br/>(inventory)"]
+  end
+
+  subgraph DATA["Data stores"]
+    os[("OpenSearch<br/>vectors + BM25")]
+    astra[("AstraDB<br/>knowledge graph")]
+    ice[("watsonx.data<br/>Iceberg / Presto")]
+  end
+
+  wx["watsonx.ai<br/>granite — embed + LLM"]
+  docs[/"Documents<br/>text · URL · PDF"/]
+
+  %% ingest (write)
+  docs -. ingest .-> agent
+
+  %% query (read)
+  user --> agent
+  agent --> vec --> os
+  agent --> kg --> astra
+  agent --> sql --> ice
+  vec & kg & sql --> agent
+  agent <-. embed + generate .-> wx
+  agent --> ans(["Answer<br/>+ citations + evidence"])
+  ans --> user
+
+  classDef saas fill:#e8f0fe,stroke:#4285f4,color:#111
+  classDef store fill:#fff4e5,stroke:#f5a623,color:#111
+  classDef app fill:#ede7ff,stroke:#7c5cff,color:#111
+  class wx saas
+  class os,astra,ice store
+  class agent app

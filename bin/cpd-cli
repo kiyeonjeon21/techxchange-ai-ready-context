@@ -1,0 +1,8 @@
+#!/bin/zsh
+# Wrapper: force cpd-cli to use docker (Rancher Desktop) by hiding podman from PATH.
+# Restricted PATH = shims (oc/docker/kubectl/nerdctl) + system dirs, excluding
+# /opt/homebrew/bin where podman lives. olm-utils-v4 image is pulled via docker
+# (already logged in to cp.icr.io with the IBM entitlement key).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$HERE/shims:/usr/bin:/bin:/usr/sbin:/sbin"
+exec "$HERE/../cpd-cli-14.3.1/cpd-cli" "$@"

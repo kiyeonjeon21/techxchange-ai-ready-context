@@ -1,0 +1,61 @@
+# One-off in-cluster ingest of the Korean finance-compliance corpus (authored markdown).
+# Runs ingest.py per file (local-file path -> skips docling). Env mirrors the rag-reindex CronJob.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-ingest-kr
+  namespace: genai-apps
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ingest
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -e
+              pip install -q requests presto-python-client >/tmp/pip.log 2>&1 || { cat /tmp/pip.log; exit 1; }
+              cd /code
+              declare -A T=(
+                [/corpus/01_pipa.md]="개인정보 보호법"
+                [/corpus/02_credit.md]="신용정보법"
+                [/corpus/03_mydata.md]="마이데이터(본인신용정보관리업)"
+                [/corpus/04_efta.md]="전자금융거래법"
+                [/corpus/05_fsec.md]="전자금융감독규정"
+                [/corpus/06_aml.md]="특정금융정보법(자금세탁방지)"
+              )
+              for f in /corpus/0*.md; do
+                echo "==== $f (${T[$f]}) ===="
+                python ingest.py "$f" --title "${T[$f]}"
+              done
+              echo "ALL DONE"
+          env:
+            - { name: WX_URL,         value: "https://us-south.ml.cloud.ibm.com" }
+            - { name: WX_PROJECT_ID,  value: "<WX_PROJECT_ID>" }
+            - { name: OS_URL,         value: "https://opensearch530.cpd.svc.cluster.local:9200" }
+            - { name: OS_USER,        value: "admin" }
+            - { name: OS_INDEX,       value: "rag_chunks" }
+            - { name: DOCLING_URL,    value: "http://docling-serve.genai-apps.svc.cluster.local:5001" }
+            - { name: ASTRA_HOST,     value: "<ASTRA_HOST>" }
+            - { name: ASTRA_KEYSPACE, value: "default_keyspace" }
+            - { name: PRESTO_HOST,    value: "<PRESTO_HOST>" }
+            - { name: PRESTO_USER,    value: "ibmlhapikey_cpadmin" }
+            - { name: WX_APIKEY,    valueFrom: { secretKeyRef: { name: rag-secrets, key: WX_APIKEY } } }
+            - { name: ASTRA_TOKEN,  valueFrom: { secretKeyRef: { name: rag-secrets, key: ASTRA_TOKEN } } }
+            - { name: OS_PASS,      valueFrom: { secretKeyRef: { name: rag-secrets, key: OS_PASS } } }
+            - { name: WXD_API_KEY,  valueFrom: { secretKeyRef: { name: rag-secrets, key: WXD_API_KEY } } }
+          volumeMounts:
+            - { name: code,   mountPath: /code }
+            - { name: corpus, mountPath: /corpus }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+      volumes:
+        - name: code
+          configMap: { name: rag-code }
+        - name: corpus
+          configMap: { name: rag-corpus }

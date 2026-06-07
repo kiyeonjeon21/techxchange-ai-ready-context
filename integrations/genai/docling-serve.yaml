@@ -1,0 +1,71 @@
+# docling-serve (Docling REST API + UI) on OCP. Namespace: genai-apps.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docling-models
+  namespace: genai-apps
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ocs-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-serve
+  namespace: genai-apps
+  labels: { app: docling-serve }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: docling-serve } }
+  template:
+    metadata:
+      labels: { app: docling-serve }
+    spec:
+      containers:
+        - name: docling-serve
+          image: quay.io/docling-project/docling-serve:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 5001, name: http }]
+          env:
+            - { name: DOCLING_SERVE_ENABLE_UI, value: "1" }
+            - { name: HF_HOME, value: /models/hf }
+            - { name: DOCLING_SERVE_ARTIFACTS_PATH, value: /models/docling }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          startupProbe:
+            tcpSocket: { port: 5001 }
+            failureThreshold: 90
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "4", memory: 8Gi }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: docling-models }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling-serve
+  namespace: genai-apps
+spec:
+  selector: { app: docling-serve }
+  ports: [{ name: http, port: 5001, targetPort: 5001 }]
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: docling-serve
+  namespace: genai-apps
+spec:
+  to: { kind: Service, name: docling-serve }
+  port: { targetPort: http }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }

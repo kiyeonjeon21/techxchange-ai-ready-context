@@ -1,0 +1,77 @@
+---
+title: Agentic RAG + Knowledge Graph on OpenShift (watsonx.data + watsonx.ai + AstraDB)
+---
+flowchart TB
+  user(["User"])
+  src[/"Source documents<br/>URL / file"/]
+
+  subgraph OCP["OpenShift cluster (<CLUSTER_NAME>)"]
+    subgraph GENAI["ns: genai-apps"]
+      subgraph RAGUI["rag-ui pod — FastAPI single container (serves UI + hosts agent)"]
+        chat["Chat UI (/)<br/>answer + citations<br/>+ tool trace (vector/graph/sql)<br/>expand: RAG chunks / KG subgraph / SQL"]
+        router{"LLM router<br/>pick tools"}
+        subgraph TOOLS["Retrieval tools (/api/chat)"]
+          tvec["Vector search"]
+          tkg["Graph lookup"]
+          tsql["SQL query"]
+        end
+        synth["LLM synthesis<br/>answer + citations"]
+      end
+      langflow["Langflow<br/>alt visual builder / chat"]
+      docling["docling-serve<br/>document parsing"]
+      dgraph["docling-graph<br/>KG extraction (CLI pod)"]
+      cron["CronJob rag-reindex<br/>*/30 incremental, hash-skip"]
+    end
+    subgraph WXD["ns: cpd — watsonx.data (Software Hub 5.3.1)"]
+      os[("OpenSearch<br/>vectors kNN lucene dim768")]
+      presto["Presto (PrestoDB)"]
+      spark["Spark engine<br/>(scale-out batch)"]
+      iceberg[("Iceberg<br/>iceberg_data.rag.corpus")]
+      minio[("MinIO object storage")]
+    end
+  end
+
+  subgraph SAAS["SaaS (external)"]
+    wxai["watsonx.ai<br/>granite-3-8b-instruct<br/>+ granite embed dim768"]
+    astra[("AstraDB NoSQL<br/>KG entities+edges, doc registry")]
+  end
+
+  %% ---------- Ingestion (write path) ----------
+  src --> docling
+  docling --> chunk["chunk text"]
+  chunk --> emb["embed chunks"]
+  emb -. embeddings .-> wxai
+  emb --> os
+  docling --> kgx["KG extract<br/>(LLM, chat API)"]
+  kgx -. extract .-> wxai
+  kgx --> astra
+  chunk --> presto
+  presto --> iceberg
+  iceberg <--> minio
+  os <--> minio
+  cron --> docling
+  dgraph -. richer KG (optional) .-> astra
+  spark -. large corpora .-> iceberg
+
+  %% ---------- Query (read path) ----------
+  user --> chat --> router
+  router -. embed query .-> wxai
+  router --> tvec --> os
+  router --> tkg --> astra
+  router --> tsql --> presto
+  presto --> iceberg
+  tvec --> synth
+  tkg --> synth
+  tsql --> synth
+  synth -. generate .-> wxai
+  synth --> chat
+  langflow -. alt UI .-> chat
+
+  classDef saas fill:#e8f0fe,stroke:#4285f4,color:#111
+  classDef store fill:#fff4e5,stroke:#f5a623,color:#111
+  classDef ocp fill:#eafaf1,stroke:#27ae60,color:#111
+  classDef app fill:#ede7ff,stroke:#7c5cff,color:#111
+  class wxai,astra saas
+  class os,iceberg,minio store
+  class langflow,docling,dgraph,cron,presto,spark ocp
+  class chat,router,tvec,tkg,tsql,synth app

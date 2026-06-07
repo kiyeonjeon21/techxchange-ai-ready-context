@@ -1,0 +1,52 @@
+# ---- secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+kubeconfig*
+
+# ---- cpd-cli / installer workspace (large, machine-specific, may hold creds) ----
+cpd-cli-workspace/
+olm-utils-workspace/
+*-workspace/
+# downloaded cpd-cli distribution (vendor binaries, >100MB files — never commit)
+cpd-cli-14.3.1/
+cpd-cli-*/
+cpd-cli-*.tgz
+
+# ---- local agent config ----
+.claude/
+
+# ---- demo video (served via GitHub attachment URL in README, not from repo) ----
+video/
+
+# ---- python ----
+**/.venv/
+**/venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---- node / mermaid tooling ----
+node_modules/
+package-lock.json
+
+# ---- demo/run artifacts (screenshots, captures, rendered exports) ----
+.playwright-mcp/
+*.png
+*.jpg
+*.jpeg
+# keep rendered architecture exports that are part of the docs
+!docs/*.png
+!docs/*.pdf
+
+# ---- OS / editor ----
+.DS_Store
+*.swp
+.idea/
+.vscode/
+*.log
+/tmp/

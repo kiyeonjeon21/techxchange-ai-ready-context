@@ -1,0 +1,76 @@
+# Langflow on OCP (SQLite + PVC, single replica). Namespace: genai-apps.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: langflow-data
+  namespace: genai-apps
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ocs-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langflow
+  namespace: genai-apps
+  labels: { app: langflow }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: langflow } }
+  template:
+    metadata:
+      labels: { app: langflow }
+    spec:
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: langflow
+          image: langflowai/langflow:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 7860, name: http }]
+          env:
+            - { name: LANGFLOW_CONFIG_DIR, value: /var/lib/langflow }
+            - { name: LANGFLOW_DATABASE_URL, value: "sqlite:////var/lib/langflow/langflow.db" }
+            - { name: LANGFLOW_HOST, value: 0.0.0.0 }
+            - { name: LANGFLOW_PORT, value: "7860" }
+            - { name: DO_NOT_TRACK, value: "true" }
+            - { name: HOME, value: /var/lib/langflow }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/langflow }
+          startupProbe:
+            tcpSocket: { port: 7860 }
+            failureThreshold: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health_check, port: 7860 }
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: langflow-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langflow
+  namespace: genai-apps
+spec:
+  selector: { app: langflow }
+  ports: [{ name: http, port: 7860, targetPort: 7860 }]
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: langflow
+  namespace: genai-apps
+spec:
+  to: { kind: Service, name: langflow }
+  port: { targetPort: http }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }

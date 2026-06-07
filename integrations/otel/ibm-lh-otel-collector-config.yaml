@@ -1,0 +1,84 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "localhost:4317"
+      http:
+        endpoint: "localhost:4318"
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: presto-jmx-<WXD_INSTANCE_ID>
+          scheme: http
+          scrape_interval: 30s
+          scrape_timeout: 30s
+          static_configs:
+          - targets: ['localhost:9090']
+processors:
+  batch:
+    send_batch_size: 512
+    send_batch_max_size: 1024
+  attributes:
+    actions:
+    - key: PodName
+      value: ${POD_NAME}
+      action: insert
+    - key: ServiceName
+      value: ${SERVICE_NAME}
+      action: insert
+    - key: Instanceid
+      value: ${INSTANCE_ID}
+      action: insert
+    - key: PodIp
+      value: ${POD_IP}
+      action: insert
+    - key: PodType
+      value: ${POD_TYPE}
+      action: insert
+    - key: PodNamespace
+      value: ${POD_NAMESPACE}
+      action: insert
+    - key: ClusterName
+      value: ${CLUSTER_NAME}
+      action: insert
+    - key: PodUid
+      value: ${POD_UID}
+      action: insert
+exporters:
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 10
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+extensions:
+  statusreporter:
+    metrics_endpoint: "http://localhost:8888/metrics"
+    stale_threshold: 300
+    engine_id: ${POD_UID}
+    pod_name: ${POD_NAME}
+    port: 7777
+    auth_enabled: true
+
+service:
+  extensions: [statusreporter]
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+     traces:
+      receivers: [otlp]
+      processors: [batch, attributes]
+      exporters: [debug]
+     metrics:
+      receivers: [prometheus, otlp]
+      processors: [batch, attributes]
+      exporters: [prometheus, debug]

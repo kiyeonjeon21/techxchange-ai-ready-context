@@ -1,0 +1,89 @@
+# Single-container FastAPI chat UI (serves designed frontend + /api/chat -> agent.run).
+# Internal image registry is Removed, so we use the runtime pip-install pattern on ubi9/python-312:
+# configmaps (rag-code python, rag-static frontend) are mounted read-only and copied into a writable
+# /app tree, then uvicorn serves it. Env/secrets mirror the rag-reindex CronJob.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-ui
+  namespace: genai-apps
+  labels: { app: rag-ui }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: rag-ui } }
+  template:
+    metadata:
+      labels: { app: rag-ui }
+    spec:
+      containers:
+        - name: ui
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -e
+              pip install -q fastapi uvicorn requests presto-python-client python-multipart >/tmp/pip.log 2>&1 || { cat /tmp/pip.log; exit 1; }
+              mkdir -p /tmp/app/static
+              cp /code/*.py /tmp/app/
+              cp /static-src/* /tmp/app/static/
+              cd /tmp/app
+              exec uvicorn app:app --host 0.0.0.0 --port 8080
+          ports:
+            - { containerPort: 8080, name: http }
+          env:
+            - { name: WX_URL,         value: "https://us-south.ml.cloud.ibm.com" }
+            - { name: WX_PROJECT_ID,  value: "<WX_PROJECT_ID>" }
+            - { name: OS_URL,         value: "https://opensearch530.cpd.svc.cluster.local:9200" }
+            - { name: OS_USER,        value: "admin" }
+            - { name: OS_INDEX,       value: "rag_chunks" }
+            - { name: DOCLING_URL,    value: "http://docling-serve.genai-apps.svc.cluster.local:5001" }
+            - { name: ASTRA_HOST,     value: "<ASTRA_HOST>" }
+            - { name: ASTRA_KEYSPACE, value: "default_keyspace" }
+            - { name: PRESTO_HOST,    value: "<PRESTO_HOST>" }
+            - { name: PRESTO_USER,    value: "ibmlhapikey_cpadmin" }
+            - { name: WX_APIKEY,    valueFrom: { secretKeyRef: { name: rag-secrets, key: WX_APIKEY } } }
+            - { name: ASTRA_TOKEN,  valueFrom: { secretKeyRef: { name: rag-secrets, key: ASTRA_TOKEN } } }
+            - { name: OS_PASS,      valueFrom: { secretKeyRef: { name: rag-secrets, key: OS_PASS } } }
+            - { name: WXD_API_KEY,  valueFrom: { secretKeyRef: { name: rag-secrets, key: WXD_API_KEY } } }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          volumeMounts:
+            - { name: code,   mountPath: /code }
+            - { name: static, mountPath: /static-src }
+            - { name: corpus, mountPath: /corpus }
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+      volumes:
+        - name: code
+          configMap: { name: rag-code }
+        - name: static
+          configMap: { name: rag-static }
+        - name: corpus
+          configMap: { name: rag-corpus }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-ui
+  namespace: genai-apps
+spec:
+  selector: { app: rag-ui }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rag-ui
+  namespace: genai-apps
+  annotations:
+    # LLM synthesis + full-KG pagination can exceed the default 30s; allow 120s.
+    haproxy.router.openshift.io/timeout: 120s
+spec:
+  to: { kind: Service, name: rag-ui }
+  port: { targetPort: http }
+  tls: { termination: edge, insecureEdgeTerminationPolicy: Redirect }

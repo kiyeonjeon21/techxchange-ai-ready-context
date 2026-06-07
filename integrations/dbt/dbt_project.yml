@@ -1,0 +1,6 @@
+name: wxd_demo
+version: "1.0.0"
+profile: watsonx_data_presto
+models:
+  wxd_demo:
+    +materialized: view

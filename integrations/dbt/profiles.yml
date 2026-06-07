@@ -1,0 +1,15 @@
+watsonx_data_presto:
+  target: dev
+  outputs:
+    dev:
+      type: watsonx_presto
+      method: BasicAuth
+      user: ibmlhapikey_cpadmin
+      password: "{{ env_var('WXD_API_KEY') }}"
+      host: <PRESTO_HOST>
+      port: 443
+      database: iceberg_data
+      schema: dbt_demo
+      http_scheme: https
+      threads: 2
+      ssl_verify: false

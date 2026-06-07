@@ -1,0 +1,1 @@
+SELECT id, msg FROM iceberg_data.demo_db.spark_iceberg_test ORDER BY id

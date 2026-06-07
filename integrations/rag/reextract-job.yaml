@@ -1,0 +1,63 @@
+# One-off: force re-ingest every doc in doc_registry to apply the improved KG-extraction prompt.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-reextract
+  namespace: genai-apps
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: reextract
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -e
+              pip install -q requests presto-python-client >/tmp/pip.log 2>&1 || { cat /tmp/pip.log; exit 1; }
+              cd /code
+              python -c "
+              import ingest, rag_common as rc
+              reg = set(d['doc_id'] for d in ingest.list_docs())
+              for d in ingest.list_docs():
+                  try:
+                      r = ingest.ingest_source(d['source'], title=d['title'], force=True)
+                      print(r['status'], '| ent', r['entities'], 'edge', r['edges'], '|', d['title'])
+                  except Exception as e:
+                      print('ERR', d['title'], repr(e)[:160])
+              kg = rc.astra_find_all(rc.ASTRA_KG)
+              orphans = set(x.get('doc_id') for x in kg) - reg
+              for oid in orphans:
+                  if oid:
+                      rc.astra_delete_all(rc.ASTRA_KG, {'doc_id': oid}); print('pruned orphan', oid)
+              print('REEXTRACT DONE')
+              "
+          env:
+            - { name: WX_URL,         value: "https://us-south.ml.cloud.ibm.com" }
+            - { name: WX_PROJECT_ID,  value: "<WX_PROJECT_ID>" }
+            - { name: OS_URL,         value: "https://opensearch530.cpd.svc.cluster.local:9200" }
+            - { name: OS_USER,        value: "admin" }
+            - { name: OS_INDEX,       value: "rag_chunks" }
+            - { name: DOCLING_URL,    value: "http://docling-serve.genai-apps.svc.cluster.local:5001" }
+            - { name: ASTRA_HOST,     value: "<ASTRA_HOST>" }
+            - { name: ASTRA_KEYSPACE, value: "default_keyspace" }
+            - { name: PRESTO_HOST,    value: "<PRESTO_HOST>" }
+            - { name: PRESTO_USER,    value: "ibmlhapikey_cpadmin" }
+            - { name: WX_APIKEY,    valueFrom: { secretKeyRef: { name: rag-secrets, key: WX_APIKEY } } }
+            - { name: ASTRA_TOKEN,  valueFrom: { secretKeyRef: { name: rag-secrets, key: ASTRA_TOKEN } } }
+            - { name: OS_PASS,      valueFrom: { secretKeyRef: { name: rag-secrets, key: OS_PASS } } }
+            - { name: WXD_API_KEY,  valueFrom: { secretKeyRef: { name: rag-secrets, key: WXD_API_KEY } } }
+          volumeMounts:
+            - { name: code,   mountPath: /code }
+            - { name: corpus, mountPath: /corpus }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+      volumes:
+        - name: code
+          configMap: { name: rag-code }
+        - name: corpus
+          configMap: { name: rag-corpus }

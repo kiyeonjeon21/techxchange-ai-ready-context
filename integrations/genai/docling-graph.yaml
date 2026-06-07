@@ -1,0 +1,71 @@
+# docling-graph runtime pod (CLI/library) — no official image, so pip-install into a PVC-backed venv.
+# Use via: oc exec -n genai-apps deploy/docling-graph -- /work/venv/bin/docling-graph --help
+# LLM: external API — add keys to secret `docling-graph-llm` (see below), then they appear as env.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docling-graph-venv
+  namespace: genai-apps
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ocs-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-graph
+  namespace: genai-apps
+  labels: { app: docling-graph }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: docling-graph } }
+  template:
+    metadata:
+      labels: { app: docling-graph }
+    spec:
+      securityContext: { fsGroup: 0 }
+      containers:
+        - name: docling-graph
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          env:
+            - { name: HF_HOME, value: /work/.cache/hf }
+            - { name: PIP_NO_CACHE_DIR, value: "1" }
+            # LLM creds (optional; provide later). Example for OpenAI: OPENAI_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom: { secretKeyRef: { name: docling-graph-llm, key: OPENAI_API_KEY, optional: true } }
+            - name: WATSONX_APIKEY
+              valueFrom: { secretKeyRef: { name: docling-graph-llm, key: WATSONX_APIKEY, optional: true } }
+            - name: WATSONX_URL
+              valueFrom: { secretKeyRef: { name: docling-graph-llm, key: WATSONX_URL, optional: true } }
+            - name: WATSONX_PROJECT_ID
+              valueFrom: { secretKeyRef: { name: docling-graph-llm, key: WATSONX_PROJECT_ID, optional: true } }
+          command: ["/bin/bash","-c"]
+          args:
+            - |
+              set -e
+              VENV=/work/venv
+              if [ ! -f "$VENV/.installed" ]; then
+                echo "[init] creating venv + installing docling-graph (first run, several minutes)..."
+                python -m venv "$VENV"
+                "$VENV/bin/pip" install --upgrade pip
+                # matched CPU builds of torch+torchvision (mismatched ABI -> torchvision segfault)
+                "$VENV/bin/pip" install torch==2.12.0 torchvision==0.27.0 --index-url https://download.pytorch.org/whl/cpu
+                # transformers must be <5 (docling 2.97 breaks on transformers 5.x AutoProcessor)
+                "$VENV/bin/pip" install docling-graph 'transformers<5'
+                touch "$VENV/.installed"
+                echo "[init] install complete"
+              fi
+              echo "[ready] docling-graph at $VENV/bin (use: oc exec ... -- $VENV/bin/docling-graph --help)"
+              exec sleep infinity
+          volumeMounts:
+            - { name: venv, mountPath: /work }
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: "2", memory: 6Gi }
+      volumes:
+        - name: venv
+          persistentVolumeClaim: { claimName: docling-graph-venv }

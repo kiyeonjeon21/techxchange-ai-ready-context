@@ -1,0 +1,28 @@
+# dbt profiles for watsonx.data Presto — WORKING reference (CPD 5.3.1 / watsonx.data 2.3.x)
+# Adapter: dbt-watsonx-presto   ->   profile type is "watsonx_presto" (NOT "presto")
+#   pip install dbt-watsonx-presto   (needs python <=3.12; this repo uses integrations/dbt/.venv)
+#
+# Auth (important): user MUST be "ibmlhapikey_<cpd-username>" with password = a CPD API key.
+#   Plain "cpadmin" fails with AMS 401 "Failed to get zen instance token".
+#   Generate API key:  curl -sk -X POST "$CPD/usermgmt/v1/user/apiKey" -H "Authorization: Bearer $TOKEN" | jq -r .apiKey
+# Host: the Presto engine's external route (Infrastructure manager > engine > Connect), port 443, https.
+
+watsonx_data_presto:
+  target: dev
+  outputs:
+    dev:
+      type: watsonx_presto
+      method: BasicAuth
+      user: ibmlhapikey_cpadmin
+      password: "{{ env_var('WXD_API_KEY') }}"      # export WXD_API_KEY=<cpd api key>
+      host: <PRESTO_HOST>
+      port: 443
+      database: iceberg_data        # catalog
+      schema: dbt_demo
+      http_scheme: https
+      threads: 2
+      ssl_verify: false             # self-signed TechZone cert
+
+# export WXD_API_KEY=...
+# dbt debug --profiles-dir integrations/dbt --project-dir integrations/dbt
+# dbt run   --profiles-dir integrations/dbt --project-dir integrations/dbt

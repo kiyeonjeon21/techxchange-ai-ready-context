@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lakehouse Assistant — Agentic RAG + Knowledge Graph</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2334e0c4'/%3E%3Cstop offset='.5' stop-color='%23a78bfa'/%3E%3Cstop offset='1' stop-color='%23f5b94a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Crect x='9' y='9' width='14' height='14' rx='4' fill='%230a0e14'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="mesh" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div class="brand-txt">
+        <h1>Lakehouse&nbsp;Assistant</h1>
+        <p>Agentic RAG <span class="dot">·</span> Knowledge Graph <span class="dot">·</span> watsonx</p>
+      </div>
+    </div>
+    <div class="stack" id="stack">
+      <span class="stack-pill">OpenSearch</span>
+      <span class="stack-pill">AstraDB</span>
+      <span class="stack-pill">watsonx.data</span>
+      <span class="stack-pill">watsonx.ai</span>
+    </div>
+    <button class="corpus-btn" id="corpusBtn" type="button" aria-label="코퍼스 관리">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 5h16M4 12h16M4 19h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>코퍼스</span>
+    </button>
+  </header>
+
+  <main class="thread" id="thread">
+    <section class="welcome" id="welcome">
+      <h2>문서·지식그래프·레이크하우스에<br/>한 번에 질문하세요.</h2>
+      <p>에이전트가 질문마다 알맞은 소스로 라우팅합니다 — 의미 기반 <b>벡터 검색</b>,
+         <b>지식그래프</b>, <b>Iceberg SQL</b> — 그리고 <b>근거</b>를 함께 보여줍니다.</p>
+      <div class="suggest" id="suggest"></div>
+    </section>
+  </main>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <input id="q" placeholder="Ask the lakehouse…" aria-label="question" />
+    <button id="send" type="submit" aria-label="send">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 12l15-7-7 15-2-6-6-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    </button>
+  </form>
+
+  <!-- Corpus management drawer (no-code ingest / delete) -->
+  <div class="drawer-scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="corpus" hidden aria-label="코퍼스 관리">
+    <header class="drawer-head">
+      <h3>코퍼스 관리</h3>
+      <button class="drawer-x" id="corpusClose" type="button" aria-label="닫기">✕</button>
+    </header>
+
+    <section class="add">
+      <div class="add-tabs" id="addTabs">
+        <button type="button" class="tab on" data-mode="text">텍스트</button>
+        <button type="button" class="tab" data-mode="url">URL</button>
+        <button type="button" class="tab" data-mode="file">파일</button>
+      </div>
+      <input class="fld" id="addTitle" placeholder="제목 (예: 망분리 정책)" />
+      <textarea class="fld" id="addText" rows="5" placeholder="문서 본문을 여기에 붙여넣으세요…"></textarea>
+      <input class="fld" id="addUrl" placeholder="https://… (웹문서 URL)" hidden />
+      <input class="fld" id="addFile" type="file" accept=".pdf,.docx,.pptx,.md,.txt,.html" hidden />
+      <button class="add-btn" id="addBtn" type="button">＋ 추가 적재</button>
+      <div class="add-status" id="addStatus"></div>
+    </section>
+
+    <section class="doclist">
+      <div class="doclist-head"><span>적재된 문서</span><span class="doclist-n" id="docCount">…</span></div>
+      <div id="docList"></div>
+    </section>
+  </aside>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
