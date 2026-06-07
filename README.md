@@ -77,6 +77,12 @@ NOTE.md                데모 가이드 + 운영 치트시트
 - KG 추출은 granite LLM(`extract_kg`) — 관계 라벨 snake_case 정규화 + 엔티티 별칭 병합
 - 내부 레지스트리 Removed → 이미지 빌드 없이 **ConfigMap + 런타임 pip-install** 패턴으로 배포
 
+## License
+
+MIT — see [LICENSE](LICENSE). 데모/교육 목적으로 자유롭게 사용하세요.
+
 ---
 
-Built with IBM watsonx.data, watsonx.ai, OpenShift · for IBM TechXchange.
+Built with IBM watsonx.data, watsonx.ai, and OpenShift · created for an **IBM TechXchange workshop in Korea (대한민국)**.
+
+> 비공식 개인 데모 자료입니다 (IBM의 공식 산출물 아님). "watsonx", "IBM TechXchange" 등은 IBM의 상표입니다.
