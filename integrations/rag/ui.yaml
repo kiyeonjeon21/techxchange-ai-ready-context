@@ -45,6 +45,8 @@ spec:
             - { name: ASTRA_TOKEN,  valueFrom: { secretKeyRef: { name: rag-secrets, key: ASTRA_TOKEN } } }
             - { name: OS_PASS,      valueFrom: { secretKeyRef: { name: rag-secrets, key: OS_PASS } } }
             - { name: WXD_API_KEY,  valueFrom: { secretKeyRef: { name: rag-secrets, key: WXD_API_KEY } } }
+            # shared-password gate: set this secret key to enable login (unset = open access)
+            - { name: APP_PASSWORD, valueFrom: { secretKeyRef: { name: rag-secrets, key: APP_PASSWORD, optional: true } } }
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 20
