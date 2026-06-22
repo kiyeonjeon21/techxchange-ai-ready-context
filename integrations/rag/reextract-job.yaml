@@ -22,6 +22,8 @@ spec:
               python -c "
               import ingest, rag_common as rc
               reg = set(d['doc_id'] for d in ingest.list_docs())
+              rc.astra_drop(rc.ASTRA_KG); rc.astra_ensure()   # migrate kg -> vector collection
+              print('kg recreated as vector collection')
               for d in ingest.list_docs():
                   try:
                       r = ingest.ingest_source(d['source'], title=d['title'], force=True)

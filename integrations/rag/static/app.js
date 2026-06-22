@@ -8,8 +8,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<":
 const SUGGESTIONS = [
   "가명정보란 무엇이고 동의 없이 쓸 수 있는 목적은?",
   "전자금융거래법의 접근매체와 감독기관의 관계는?",
-  "자금세탁 의심거래는 어디에 보고하고, 가상자산사업자(VASP)의 의무는?",
-  "인덱싱된 문서는 총 몇 개이고 각각 청크 수는?",
+  "위험등급이 high인 고객의 플래그된 거래 총액과 상대국가는?",
+  "고객 세그먼트별 의심거래보고(STR) 건수와 신고금액 합계는?",
 ];
 
 function renderSuggestions() {
@@ -99,11 +99,18 @@ function kgPanel(kg) {
   return panel("p-kg", `Knowledge subgraph`, ents.length + edges.length, `<div class="kg">${entHtml}${edgeHtml}</div>`);
 }
 
-function sqlPanel(rows) {
-  if (!rows?.length) return "";
-  const body = `<table class="sqlt"><tbody>${rows.map(r =>
-    `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  return panel("p-sql", `Corpus / SQL rows`, rows.length, body);
+function sqlPanel(sql) {
+  // accepts the new shape {query, columns, rows}; tolerates the old bare-rows array
+  const obj = Array.isArray(sql) ? { query: null, columns: [], rows: sql } : (sql || {});
+  const rows = obj.rows || [], cols = obj.columns || [];
+  if (!rows.length && !obj.query) return "";
+  const code = obj.query ? `<pre class="sqlcode"><code>${esc(obj.query)}</code></pre>` : "";
+  const head = cols.length ? `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>` : "";
+  const body = rows.length
+    ? `<table class="sqlt">${head}<tbody>${rows.map(r =>
+        `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+    : `<div class="dl-empty">결과 없음</div>`;
+  return panel("p-sql", `Generated SQL · results`, rows.length, code + body);
 }
 
 function panel(cls, title, n, body) {

@@ -4,6 +4,7 @@
 Usage: python agent.py "your question"
 """
 import sys, json, re, rag_common as rc
+import text2sql
 
 def tool_vector(q, k=8):
     hits = rc.os_hybrid_search(q, k=k)   # semantic kNN + BM25 keyword, RRF-fused
@@ -17,31 +18,38 @@ def _en(r, side):
     """Normalized endpoint name of an edge (uses stored *_norm, falls back to norm_name)."""
     return r.get(side + "_norm") or rc.norm_name(r.get(side))
 
-def tool_graph(q, k=4, max_edges=16, max_ents=16):
-    """Relevance-ranked, alias-merged subgraph over the FULL KG (paginated):
-       score = explicit entity mention in the question (2) + semantically-seeded doc via vector (1).
-       Names are normalized (norm_name) so 마이데이터 / 마이데이터 사업자 collapse to one node."""
-    docs = rc.astra_find_all(rc.ASTRA_KG)                  # (1) full KG (no 20-doc page cap)
-    ents = [d for d in docs if d.get("kind") == "entity"]
-    edges = [d for d in docs if d.get("kind") == "edge"]
+def tool_graph(q, k=8, max_edges=16, max_ents=16):
+    """Vector-seeded, alias-merged 1-hop subgraph over the AstraDB KG:
+       (1) seed entities by semantic similarity ($vector), (2) expand to their 1-hop edges,
+       (3) rank by explicit mention (2) + seed membership (1). Falls back to the full edge set.
+       Names are normalized (norm_name + entity resolution) so aliases collapse to one node."""
     qn = rc.norm_name(q)                                   # normalized question (spaces/parens stripped)
     toks = {t for t in (rc.norm_name(x) for x in _tokens(q)) if len(t) >= 2}
 
-    seed_docs = set()                                     # (2) vector seed: semantically relevant docs
+    ents = rc.astra_find_all(rc.ASTRA_KG, {"kind": "entity"})   # entity catalog (small; names/types + emb)
+    seed_norms = set()                                     # (1) vector seed: semantically similar entities
     try:
-        for h in rc.os_vector_search(q, k=k):
-            if h.get("doc_id"):
-                seed_docs.add(h["doc_id"])
+        qv = rc.wx_embed([q])[0]                            # app-side cosine (this AstraDB lacks ANN)
+        for e in rc.kg_vector_seed(qv, ents, k=k):
+            if e.get("norm"): seed_norms.add(e["norm"])
     except Exception:
         pass
+
+    edges = []
+    if seed_norms:                                         # (2) 1-hop: edges touching a seed entity
+        S = list(seed_norms)
+        edges = rc.astra_find_all(rc.ASTRA_KG,
+            {"kind": "edge", "$or": [{"src_norm": {"$in": S}}, {"dst_norm": {"$in": S}}]})
+    if not edges:                                          # fallback: whole edge set, then rank
+        edges = rc.astra_find_all(rc.ASTRA_KG, {"kind": "edge"})
 
     def name_hit(nn):                                     # nn is already normalized
         return len(nn) >= 2 and (nn in qn or any(t in nn or nn in t for t in toks))
 
-    def score(r):                                        # (3) explicit endpoint mention (2) + doc scope (1)
+    def score(r):                                        # (3) explicit endpoint mention (2) + seed scope (1)
         s = 0
         if name_hit(_en(r, "src")) or name_hit(_en(r, "dst")): s += 2
-        if r.get("doc_id") in seed_docs: s += 1
+        if _en(r, "src") in seed_norms or _en(r, "dst") in seed_norms: s += 1
         return s
 
     scored = sorted(((score(r), r) for r in edges), key=lambda sr: sr[0], reverse=True)  # stable
@@ -85,25 +93,62 @@ def tool_graph(q, k=4, max_edges=16, max_ents=16):
         if len(hit_e) >= max_ents: break
     return hit_r, {"entities": hit_e, "edges": hit_r}
 
-def tool_sql(q):
-    if not rc.PRESTO_HOST: return ["(presto disabled)"], None
+def _sql_obj(query, columns, rows):
+    return {"query": query, "columns": columns, "rows": [list(r) for r in rows]}
+
+def _corpus_inventory():
+    """Fallback SQL tool: inventory of the indexed RAG corpus (when text2sql yields nothing)."""
     t = f"{rc.PRESTO_CATALOG}.{rc.PRESTO_SCHEMA}.{rc.PRESTO_TABLE}"
-    rows = rc.presto_exec(f"SELECT title, source, chunks, entities, edges FROM {t} ORDER BY chunks DESC")
+    sql = f"SELECT title, source, chunks, entities, edges FROM {t} ORDER BY chunks DESC LIMIT 10"
+    cols, rows = rc.presto_query(sql)
     n = rc.presto_exec(f"SELECT count(*), sum(chunks) FROM {t}")
-    ctx = [f"corpus: {n[0][0]} docs, {n[0][1]} chunks total"] + [f"- {r[0]} (chunks={r[2]}, entities={r[3]}, edges={r[4]})" for r in rows[:10]]
-    return ctx, rows
+    ctx = [f"corpus: {n[0][0]} docs, {n[0][1]} chunks total"] + \
+          [f"- {r[0]} (chunks={r[2]}, entities={r[3]}, edges={r[4]})" for r in rows[:10]]
+    return ctx, _sql_obj(sql, cols, rows)
+
+def tool_sql(q):
+    """text-to-SQL over the AML business dataset; falls back to corpus inventory on empty/error."""
+    if not rc.PRESTO_HOST: return ["(presto disabled)"], None
+    try:
+        r = text2sql.run_text2sql(q)
+    except Exception as e:
+        r = {"sql": None, "columns": [], "rows": [], "error": str(e)[:200]}
+    if r.get("error") is None and r.get("sql"):       # valid query (show it even with 0 rows)
+        cols, rows = r.get("columns", []), r.get("rows", [])
+        preview = [", ".join(f"{c}={v}" for c, v in zip(cols, row)) for row in rows[:30]]
+        ctx = [f"SQL: {r['sql']}", f"({len(rows)} rows; columns: {', '.join(cols)})"] + \
+              ([f"- {p}" for p in preview] or ["(no rows returned)"])
+        return ctx, _sql_obj(r["sql"], cols, rows)
+    try:                                              # fallback only on error: corpus inventory
+        ctx, obj = _corpus_inventory()
+        ctx = [f"(text2sql failed: {r.get('error')} — showing corpus inventory)"] + ctx
+        return ctx, obj
+    except Exception as e:
+        return [f"(sql error: {str(e)[:120]})"], None
 
 def route(q):
     msg = [{"role": "system", "content": "You route a question to retrieval tools. Reply ONLY JSON like "
-            '{"vector":true,"graph":false,"sql":false}. vector=semantic doc search; '
-            "graph=entity/relationship questions; sql=counts/inventory of the indexed corpus."},
+            '{"vector":true,"graph":false,"sql":false}. Multiple tools may be true.\n'
+            "- vector: meaning/definition/content of the regulatory documents (laws, regulations, "
+            "concepts such as 가명정보, 접근매체, 의심거래보고). Default ON for any document/concept question.\n"
+            "- graph: relationships or connections between entities (e.g. 'X와 Y의 관계', 감독기관·보고 "
+            "대상·적용 대상이 무엇인지, 누가 누구를 규제/감독하는지).\n"
+            "- sql: ONLY the AML business DATASET — customers, accounts, transactions, suspicious-"
+            "transaction reports (STR): counts, sums, amounts, risk ratings, flagged transactions, "
+            "counterparty countries. Do NOT use sql for questions about laws or concepts.\n"
+            "When in doubt, set vector true."},
            {"role": "user", "content": q}]
     try:
         j = json.loads(re.search(r"\{.*\}", rc.wx_chat(msg, max_tokens=60), re.S).group(0))
     except Exception:
         j = {}
     j.setdefault("vector", True)  # always ground in docs
+    # backstop: granite under-selects graph -> force it for relationship/structure-style questions
+    if _GRAPH_CUES.search(q):
+        j["graph"] = True
     return j
+
+_GRAPH_CUES = re.compile(r"관계|관련|연결|감독|규제|적용\s*대상|보고\s*대상|소관|의무|책임|누가|상호|체계")
 
 def run(q):
     """Structured agentic answer for the API/UI."""
@@ -117,11 +162,13 @@ def run(q):
     if plan.get("graph"):
         c, kg = tool_graph(q); ctx += ["# Knowledge graph"] + c; kg_raw = kg
     if plan.get("sql"):
-        c, rows = tool_sql(q); ctx += ["# Corpus (SQL/Iceberg)"] + c; sql_raw = rows
+        c, sql_obj = tool_sql(q); ctx += ["# SQL (watsonx.data / Iceberg)"] + c; sql_raw = sql_obj
     context = "\n".join(ctx)[:9000]   # fits ~8 hybrid chunks + graph/sql sections for granite-3-8b
     msg = [{"role": "system", "content": "Answer the question using ONLY the provided context "
-            "(document passages, knowledge graph, corpus stats). Cite passage titles like [title#n]. "
-            "If the context is insufficient, say so. Use concise markdown. "
+            "(document passages, knowledge graph, SQL results). Cite passage titles like [title#n]. "
+            "If the context is insufficient, say so. Present only values that appear in the context — "
+            "NEVER invent or pad with placeholder rows (if fewer results exist than asked, show only those). "
+            "Use concise markdown. "
             "Reply in the same language as the question; if the question is in Korean, answer in Korean (한국어)."},
            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {q}"}]
     ans = rc.wx_chat(msg, max_tokens=500)
@@ -132,7 +179,7 @@ def run(q):
                 "chunks": [{"title": h["title"], "chunk_no": h["chunk_no"], "score": round(h["score"], 3),
                             "text": h["text"], "source": h.get("source", "")} for h in chunks_raw],
                 "kg": kg_raw or {"entities": [], "edges": []},
-                "sql": [list(r) for r in (sql_raw or [])],
+                "sql": sql_raw or {"query": None, "columns": [], "rows": []},
             }}
 
 def answer(q):

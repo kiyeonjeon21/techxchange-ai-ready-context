@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import agent    # agent.run(q) -> structured dict
 import ingest   # ingest_source / delete_doc / list_docs
+import text2sql # run_text2sql(q) -> {sql, columns, rows, error}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
@@ -25,6 +26,9 @@ _SECRET = (os.environ.get("APP_SECRET") or ("k:" + APP_PASSWORD)).encode()
 COOKIE = "ragsess"
 SESSION_TTL = 12 * 3600
 PUBLIC_PREFIXES = ("/login", "/static/", "/healthz", "/api/login", "/favicon")
+# Per-tool endpoints (/api/tool/*) for Langflow orchestration: authorized by a static token header
+# (X-Tool-Token), not the browser session cookie. Defaults to APP_PASSWORD if TOOL_TOKEN unset.
+TOOL_TOKEN = os.environ.get("TOOL_TOKEN") or APP_PASSWORD
 
 def _sign(exp: int) -> str:
     sig = hmac.new(_SECRET, str(exp).encode(), hashlib.sha256).hexdigest()
@@ -47,6 +51,10 @@ async def auth_gate(request: Request, call_next):
     path = request.url.path
     if any(path == p or path.startswith(p) for p in PUBLIC_PREFIXES):
         return await call_next(request)
+    if path.startswith("/api/tool/"):                    # token-gated tool endpoints (Langflow)
+        if TOOL_TOKEN and hmac.compare_digest(request.headers.get("X-Tool-Token", ""), TOOL_TOKEN):
+            return await call_next(request)
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
     if _valid(request.cookies.get(COOKIE, "")):
         return await call_next(request)
     if path.startswith("/api/") or path.startswith("/corpus/"):
@@ -133,6 +141,39 @@ def ingest_file(file: UploadFile = File(...), title: str = Form(None)):
 def delete(req: DeleteReq):
     try:
         return {"ok": True, **ingest.delete_doc(req.doc_id)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+class ToolReq(BaseModel):
+    question: str
+    k: int | None = None
+
+@app.post("/api/tool/vector")
+def tool_vector(req: ToolReq):
+    """Vector/keyword passage retrieval (OpenSearch hybrid). For Langflow orchestration."""
+    try:
+        ctx, hits = agent.tool_vector(req.question.strip(), k=req.k or 8)
+        return {"ok": True, "passages": ctx,
+                "results": [{"title": h["title"], "chunk_no": h["chunk_no"],
+                             "score": round(h.get("score", 0), 4), "text": h["text"],
+                             "source": h.get("source", "")} for h in hits]}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+@app.post("/api/tool/graph")
+def tool_graph(req: ToolReq):
+    """Knowledge-graph 1-hop subgraph (AstraDB). For Langflow orchestration."""
+    try:
+        _, kg = agent.tool_graph(req.question.strip())
+        return {"ok": True, "entities": kg["entities"], "edges": kg["edges"]}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+@app.post("/api/tool/sql")
+def tool_sql(req: ToolReq):
+    """text-to-SQL over the AML dataset (watsonx.data/Presto). For Langflow orchestration."""
+    try:
+        return {"ok": True, **text2sql.run_text2sql(req.question.strip())}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 

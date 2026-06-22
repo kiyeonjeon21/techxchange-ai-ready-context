@@ -156,9 +156,28 @@ def astra_delete_all(coll, flt, max_loops=50):
         deleted += 1
     return deleted
 
+def cosine(a, b):
+    """Cosine similarity of two equal-length float vectors (app-side; KG is small)."""
+    if not a or not b: return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+def kg_vector_seed(qvec, ents, k=8):
+    """Rank KG entity docs (each with an 'emb' field) by cosine vs qvec; return top-k docs.
+    NOTE: this AstraDB instance's on-disk SAI format predates vector indexes, so semantic
+    seeding is computed app-side (the KG is small). Production: a vector-capable store + ANN."""
+    scored = [(cosine(qvec, e.get("emb") or []), e) for e in ents if e.get("emb")]
+    scored.sort(key=lambda se: se[0], reverse=True)
+    return [e for s, e in scored[:k]]
+
 def astra_ensure():
     for c in (ASTRA_KG, ASTRA_DOCS):
-        astra({"createCollection": {"name": c}})  # idempotent-ish; ignores "already exists"
+        astra({"createCollection": {"name": c}})  # plain collections (no server-side vector index here)
+
+def astra_drop(coll):
+    return astra({"deleteCollection": {"name": coll}})
 
 # ---- watsonx.data Presto / Iceberg (structured corpus table + SQL tool) ----
 PRESTO_HOST = os.environ.get("PRESTO_HOST", "")
@@ -182,6 +201,13 @@ def presto_exec(sql):
     cur = presto_conn().cursor(); cur.execute(sql)
     try: return cur.fetchall()
     except Exception: return []
+
+def presto_query(sql):
+    """Run a SELECT and return (columns, rows) — column names from cursor.description (for text2sql)."""
+    cur = presto_conn().cursor(); cur.execute(sql)
+    rows = cur.fetchall()
+    cols = [d[0] for d in (cur.description or [])]
+    return cols, rows
 
 def iceberg_ensure():
     presto_exec(f"CREATE SCHEMA IF NOT EXISTS {PRESTO_CATALOG}.{PRESTO_SCHEMA}")

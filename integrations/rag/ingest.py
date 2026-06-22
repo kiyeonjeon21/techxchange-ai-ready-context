@@ -29,14 +29,20 @@ def parse_docling_file(file_bytes, filename):
         raise RuntimeError(f"no markdown from docling file convert: keys={list(doc.keys()) if isinstance(doc, dict) else type(doc)}")
     return md
 
+_BINARY_EXT = (".pdf", ".docx", ".pptx", ".png", ".jpg", ".jpeg", ".html", ".htm")
+
 def load_source(source):
-    """Local markdown file path -> read directly (authored corpus); otherwise fetch+parse via docling."""
+    """Local file path -> read markdown directly, or convert binary (pdf/docx/...) via docling;
+    otherwise treat as a URL and fetch+parse via docling."""
     if os.path.exists(source):
+        if source.lower().endswith(_BINARY_EXT):
+            with open(source, "rb") as f:
+                return parse_docling_file(f.read(), os.path.basename(source))
         with open(source, encoding="utf-8") as f:
             return f.read()
     return parse_docling(source)
 
-def chunk(md, size=900, overlap=150):
+def chunk(md, size=640, overlap=120):   # ~<450 tokens/chunk for Korean (granite-embed cap = 512)
     md = re.sub(r"\n{3,}", "\n\n", md).strip()
     out, i = [], 0
     while i < len(md):
@@ -47,14 +53,42 @@ KG_RELS = ("regulates", "supervised_by", "reports_to", "based_on", "complies_wit
            "part_of", "applies_to", "issued_by", "requires", "operated_by", "oversees",
            "has_obligation", "related_to")
 
+# Entity-type ontology (controlled vocabulary) — keeps node types consistent across documents.
+KG_TYPES = ("law", "regulation", "regulator", "institution", "scheme", "obligation",
+            "data_subject", "system", "service_provider", "data", "concept")
+_TYPE_ALIASES = {
+    "법률": "law", "법령": "law", "법": "law", "act": "law", "statute": "law",
+    "규정": "regulation", "규칙": "regulation",
+    "규제기관": "regulator", "감독기관": "regulator", "supervisor": "regulator", "authority": "regulator",
+    "기관": "institution", "organization": "institution", "agency": "institution", "company": "institution",
+    "제도": "scheme", "program": "scheme",
+    "의무": "obligation", "duty": "obligation", "requirement": "obligation",
+    "정보주체": "data_subject", "개인": "data_subject", "individual": "data_subject",
+    "시스템": "system", "기술": "system", "technology": "system",
+    "사업자": "service_provider", "provider": "service_provider", "business": "service_provider",
+    "데이터": "data", "정보": "data",
+}
+
+def _clean_type(t):
+    """Map a free-form entity type onto the controlled KG_TYPES vocabulary."""
+    s = str(t or "").strip().lower()
+    if s in KG_TYPES: return s
+    s = re.sub(r"\(.*?\)", "", s).strip()
+    if s in _TYPE_ALIASES: return _TYPE_ALIASES[s]
+    for k, v in _TYPE_ALIASES.items():
+        if k in s: return v
+    return "concept"
+
 def extract_kg(text, doc_id):
     rels = ", ".join(KG_RELS)
+    types = ", ".join(KG_TYPES)
     prompt = (
         "Extract a knowledge graph from the text below. Return ONLY compact JSON (no markdown, no prose):\n"
         '{"entities":[{"name":"..","type":".."}],"edges":[{"src":"..","rel":"..","dst":".."}]}\n'
         "Rules:\n"
         "- Every edge's src and dst MUST be an entity name from the entities list (canonical, concise).\n"
         f"- rel MUST be exactly one snake_case label from this set (pick the closest meaning): {rels}.\n"
+        f"- type MUST be exactly one label from this set (pick the closest meaning): {types}.\n"
         "- NEVER use a particle/postposition/conjunction/sentence-fragment as rel "
         "(e.g. not '의','는','을','로','표준 API 방식으로'). rel is always a relationship verb.\n"
         "- Use canonical, consistent entity names (e.g. '마이데이터', not '마이데이터 사업자'; "
@@ -66,12 +100,39 @@ def extract_kg(text, doc_id):
     if not m: return [], []
     try: g = json.loads(m.group(0))
     except Exception: return [], []
-    ents = g.get("entities", [])
+    ents = [{"name": e.get("name"), "type": _clean_type(e.get("type"))}
+            for e in g.get("entities", []) if e.get("name")]
     edges = []
     for e in g.get("edges", []):
         if e.get("src") and e.get("dst"):
             edges.append({"src": e["src"], "rel": _clean_rel(e.get("rel")), "dst": e["dst"]})
     return ents, edges
+
+def resolve_entities(ents, vecs):
+    """Two-stage entity resolution: norm_name (1st) + embedding cosine vs the existing KG (2nd,
+    computed app-side as this AstraDB lacks server-side ANN). Sets each entity's 'norm' to a
+    canonical key, merging semantic duplicates across documents. Returns a remap
+    {original_norm -> canonical_norm} to also rewrite this doc's edge endpoints."""
+    try:
+        existing = [e for e in rc.astra_find_all(rc.ASTRA_KG, {"kind": "entity"}) if e.get("emb")]
+    except Exception:
+        existing = []
+    remap = {}
+    for e, v in zip(ents, vecs):
+        nn = rc.norm_name(e.get("name"))
+        canon = nn
+        best_s, best = 0.0, None
+        for h in existing:
+            s = rc.cosine(v, h.get("emb") or [])
+            if s > best_s: best_s, best = s, h
+        if best is not None and best_s >= 0.90:
+            hnorm = best.get("norm")
+            if hnorm and hnorm != nn:
+                canon = hnorm                       # adopt the existing canonical node
+        e["norm"] = canon
+        if canon != nn:
+            remap[nn] = canon
+    return remap
 
 def _clean_rel(rel):
     """Keep clean ASCII snake_case predicates (verbs); collapse Korean particles / sentence-fragments to related_to."""
@@ -129,16 +190,21 @@ def ingest_source(source=None, *, title=None, text=None, file_bytes=None, filena
     err = rc.os_req("POST", "/_bulk?refresh=true", ndjson=bulk).json().get("errors")
     print(f"[opensearch] indexed {len(chunks)} chunks, errors={err}")
 
-    # KG extraction -> AstraDB (with normalized names for alias-merge in tool_graph)
+    # KG extraction -> AstraDB. Entities carry an 'emb' field (for app-side semantic seed search +
+    # resolution) and a canonical 'norm' from two-stage resolution (norm_name + embedding cosine).
     ents, edges = extract_kg(md, doc_id)
     if ents or edges:
+        rc.astra_delete_all(rc.ASTRA_KG, {"doc_id": doc_id})   # remove this doc's old KG first
+        ent_vecs = rc.wx_embed([f"{e.get('name')} ({e.get('type')})" for e in ents]) if ents else []
+        remap = resolve_entities(ents, ent_vecs)               # sets e['norm']; returns edge remap
+        rn = lambda name: remap.get(rc.norm_name(name), rc.norm_name(name))
         kg_docs = (
             [{"_id": f"{doc_id}:e:{i}", "kind": "entity", "doc_id": doc_id,
-              "norm": rc.norm_name(e.get("name")), **e} for i, e in enumerate(ents)] +
+              "norm": e.get("norm"), "name": e.get("name"), "type": e.get("type"),
+              "emb": ent_vecs[i]} for i, e in enumerate(ents)] +
             [{"_id": f"{doc_id}:r:{i}", "kind": "edge", "doc_id": doc_id,
-              "src_norm": rc.norm_name(ed.get("src")), "dst_norm": rc.norm_name(ed.get("dst")), **ed}
+              "src_norm": rn(ed.get("src")), "dst_norm": rn(ed.get("dst")), **ed}
              for i, ed in enumerate(edges)])
-        rc.astra_delete_all(rc.ASTRA_KG, {"doc_id": doc_id})   # loop-delete (deleteMany caps at 20/call)
         rc.astra({"insertMany": {"documents": kg_docs}}, rc.ASTRA_KG)
     print(f"[kg] entities={len(ents)} edges={len(edges)}")
 

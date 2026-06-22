@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>AstraDB에 지식그래프를 NoSQL로 담는 법</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16161d; --ink2:#3a3a47; --muted:#76768a;
+    --paper:#fbfaf7; --card:#ffffff; --line:#e7e3da;
+    --graph:#b45309; --graph-soft:#fdf0dd; --graph-line:#e9c893;
+    --vector:#0f766e; --vector-soft:#e2f3f1;
+    --sql:#6d28d9; --sql-soft:#efe9fb;
+    --code-bg:#1c1c26; --code-ink:#e8e6df;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  @page{size:A4; margin:0;}
+  body{
+    font-family:"IBM Plex Sans KR","IBM Plex Sans",sans-serif;
+    color:var(--ink); background:var(--paper);
+    font-size:13px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .page{
+    width:210mm; height:297mm; padding:16mm 17mm 14mm;
+    background:var(--paper); position:relative; page-break-after:always;
+    overflow:hidden;
+  }
+  .page:last-child{page-break-after:auto;}
+
+  /* ---------- shared bits ---------- */
+  .kicker{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--graph); font-weight:600;}
+  h1{font-family:"IBM Plex Serif",serif; font-weight:600; font-size:33px; line-height:1.15;
+    margin:.35em 0 .25em; letter-spacing:-.01em;}
+  h2{font-family:"IBM Plex Sans KR",sans-serif; font-weight:600; font-size:19px;
+    margin:0 0 .2em; letter-spacing:-.01em;}
+  h2 .num{font-family:"IBM Plex Mono",monospace; color:var(--graph); font-weight:600;
+    font-size:15px; margin-right:.55em;}
+  p{margin:.4em 0;}
+  .lead{font-size:14.5px; color:var(--ink2); line-height:1.65;}
+  b,strong{font-weight:600;}
+  .hl{background:linear-gradient(transparent 60%, var(--graph-soft) 0); padding:0 .1em; font-weight:600;}
+  .footer{position:absolute; bottom:9mm; left:17mm; right:17mm; display:flex;
+    justify-content:space-between; align-items:center;
+    font-family:"IBM Plex Mono",monospace; font-size:9.5px; color:var(--muted);
+    border-top:1px solid var(--line); padding-top:6px;}
+  .footer .dot{color:var(--graph);}
+
+  /* ---------- cover ---------- */
+  .cover{display:flex; flex-direction:column; min-height:262mm;}
+  .cover .top{flex:0 0 auto;}
+  .brand{display:flex; align-items:center; gap:9px; font-family:"IBM Plex Mono",monospace;
+    font-size:11px; letter-spacing:.12em; color:var(--ink2); text-transform:uppercase;}
+  .brand .bars{display:flex; gap:2px;}
+  .brand .bars i{width:3px; height:13px; background:var(--ink); display:block;}
+  .brand .bars i:nth-child(even){background:var(--graph);}
+  .cover h1{font-size:42px; margin-top:.5em;}
+  .cover .sub{font-size:15.5px; color:var(--ink2); max-width:135mm; line-height:1.6; margin-top:.4em;}
+  .cover .mid{flex:1 1 auto; display:flex; align-items:center;}
+  .tagrow{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;}
+  .tag{font-family:"IBM Plex Mono",monospace; font-size:10.5px; padding:5px 11px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--ink2);}
+  .tag.g{border-color:var(--graph-line); background:var(--graph-soft); color:var(--graph); font-weight:600;}
+
+  /* big number stats on cover */
+  .stats{display:flex; gap:0; border:1px solid var(--line); border-radius:14px;
+    overflow:hidden; background:var(--card); width:100%;}
+  .stats .s{flex:1; padding:20px 22px; border-right:1px solid var(--line);}
+  .stats .s:last-child{border-right:none;}
+  .stats .n{font-family:"IBM Plex Serif",serif; font-size:38px; font-weight:600; line-height:1; color:var(--ink);}
+  .stats .n small{font-size:15px; color:var(--muted); font-weight:400;}
+  .stats .l{font-size:11.5px; color:var(--muted); margin-top:7px;}
+  .stats .s.g .n{color:var(--graph);}
+
+  /* ---------- collection diagram ---------- */
+  .tree{font-family:"IBM Plex Mono",monospace; font-size:12px; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:16px 22px; line-height:1.95; color:var(--ink2);
+    white-space:pre; overflow:hidden;}
+  .tree .ks{color:var(--ink); font-weight:600;}
+  .tree .c{color:var(--graph); font-weight:600;}
+  .tree .cv{color:var(--vector); font-weight:600;}
+  .tree .cm{color:var(--muted);}
+
+  .twocol{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;}
+  .card.kind-e{border-top:3px solid var(--graph);}
+  .card.kind-r{border-top:3px solid var(--vector);}
+  .card .ct{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .pill{font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600; padding:3px 9px;
+    border-radius:6px; letter-spacing:.04em;}
+  .pill.e{background:var(--graph-soft); color:var(--graph);}
+  .pill.r{background:var(--vector-soft); color:var(--vector);}
+  .card .cd{font-size:12px; color:var(--muted);}
+
+  /* ---------- code ---------- */
+  pre{background:var(--code-bg); color:var(--code-ink); border-radius:11px; padding:15px 17px;
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.75; margin:10px 0 4px;
+    overflow:hidden; white-space:pre-wrap;}
+  pre .k{color:#9ad0ff;}          /* key */
+  pre .s{color:#f3c98b;}          /* string */
+  pre .c{color:#7e8aa0; font-style:italic;}  /* comment */
+  pre .e{color:#f0a868; font-weight:600;}     /* emphasis value (graph) */
+  pre .v{color:#7fd9cf; font-weight:600;}     /* emphasis value (vector) */
+
+  /* ---------- graph svg block ---------- */
+  .graphwrap{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 4px 2px;}
+  .triples{font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.95; color:var(--ink2);}
+  .triples .src{color:var(--ink); font-weight:600;}
+  .triples .rel{color:var(--graph); font-weight:600;}
+  .triples .dst{color:var(--ink); font-weight:600;}
+  .triples .arw{color:var(--muted);}
+
+  /* rel distribution bars */
+  .bars2{display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center;
+    font-size:11.5px;}
+  .bars2 .rl{font-family:"IBM Plex Mono",monospace; color:var(--ink2); white-space:nowrap;}
+  .bars2 .bk{height:9px; background:var(--graph-soft); border-radius:5px; overflow:hidden;}
+  .bars2 .bk i{display:block; height:100%; background:var(--graph); border-radius:5px;}
+  .bars2 .vn{font-family:"IBM Plex Mono",monospace; color:var(--muted); text-align:right;}
+
+  /* why-design list */
+  .why{display:flex; flex-direction:column; gap:11px; margin-top:6px;}
+  .why .w{display:flex; gap:14px; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:14px 16px;}
+  .why .wn{font-family:"IBM Plex Serif",serif; font-size:26px; font-weight:600; color:var(--graph);
+    line-height:1; flex:0 0 auto; width:30px;}
+  .why .wt{font-weight:600; font-size:14px; margin-bottom:2px;}
+  .why .wd{font-size:12px; color:var(--ink2); line-height:1.55;}
+  .why code{font-family:"IBM Plex Mono",monospace; font-size:11px; background:#f1ede4;
+    padding:1px 5px; border-radius:4px; color:var(--graph);}
+
+  /* flow steps */
+  .flow{display:flex; flex-direction:column; gap:0; margin-top:8px;
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:6px 18px;}
+  .flow .st{display:flex; gap:14px; padding:11px 0; border-bottom:1px dashed var(--line); align-items:flex-start;}
+  .flow .st:last-child{border-bottom:none;}
+  .flow .si{font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600; color:#fff;
+    background:var(--graph); width:22px; height:22px; border-radius:50%; display:flex;
+    align-items:center; justify-content:center; flex:0 0 auto; margin-top:1px;}
+  .flow .sx b{font-size:13px;} .flow .sx{font-size:12px; color:var(--ink2);}
+  .flow code{font-family:"IBM Plex Mono",monospace; font-size:11px; background:#f1ede4; padding:1px 5px;
+    border-radius:4px; color:var(--ink2);}
+
+  .note{font-size:11.5px; color:var(--muted); background:#f3f0ea; border-left:3px solid var(--graph-line);
+    padding:10px 14px; border-radius:0 8px 8px 0; margin-top:12px; line-height:1.6;}
+  .sec{margin-top:22px;}
+  .sec:first-of-type{margin-top:0;}
+</style>
+</head>
+<body>
+
+<!-- ===================== PAGE 1 — COVER ===================== -->
+<section class="page cover">
+  <div class="top">
+    <div class="brand">
+      <span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      IBM Client Engineering · Korea
+    </div>
+    <div class="kicker" style="margin-top:26px;">Knowledge Graph · Data Layer</div>
+    <h1>지식그래프를<br/>AstraDB에 <span style="color:var(--graph);">NoSQL</span>로 담는 법</h1>
+    <p class="sub">그래프 DB가 아니라 <b>문서형 NoSQL(Data API)</b> 컬렉션 하나에
+      엔티티와 관계를 어떻게 저장하고, 어떻게 다시 그래프로 되살려 쓰는지 —
+      라이브 데이터로 설명합니다.</p>
+    <div class="tagrow">
+      <span class="tag g">AstraDB · DataStax</span>
+      <span class="tag">JSON Data API</span>
+      <span class="tag">단일 컬렉션 + kind 필드</span>
+      <span class="tag">앱-사이드 1-홉 탐색</span>
+    </div>
+  </div>
+
+  <div class="mid">
+    <div class="stats">
+      <div class="s"><div class="n">2</div><div class="l">컬렉션<br/>kg · doc_registry</div></div>
+      <div class="s g"><div class="n">49</div><div class="l">엔티티(노드)<br/>kind = "entity"</div></div>
+      <div class="s g"><div class="n">51</div><div class="l">엣지(관계)<br/>kind = "edge"</div></div>
+      <div class="s"><div class="n">8</div><div class="l">적재 문서<br/>한·영 코퍼스</div></div>
+    </div>
+  </div>
+
+  <div style="flex:0 0 auto;">
+    <div class="tree">
+<span class="cm"># Astra keyspace: default_keyspace</span>
+<span class="ks">default_keyspace</span>
+ ├─ <span class="c">kg</span>            <span class="cm">// 지식그래프 = 엔티티 + 엣지 (한 컬렉션에 같이)</span>
+ │    ├─ {<span class="c">kind:"entity"</span>} × 49   <span class="cm">노드</span>
+ │    └─ {<span class="c">kind:"edge"</span>}   × 51   <span class="cm">관계(트리플)</span>
+ └─ <span class="cv">doc_registry</span>  <span class="cm">// 적재 문서 추적 × 8</span>
+    </div>
+    <p class="note" style="margin-top:10px;">핵심: <b>테이블도 그래프 엔진도 없습니다.</b>
+      노드와 엣지를 <b>같은 컬렉션</b>에 넣고 <code style="font-family:'IBM Plex Mono';color:var(--graph)">kind</code>
+      필드 하나로 구분합니다. 그래프 순회(Cypher/Gremlin)는 쓰지 않고, 질의 때 앱이 메모리에서 1-홉을 구성합니다.</p>
+  </div>
+
+  <div class="footer">
+    <span>Agentic RAG + Knowledge Graph on watsonx · IBM TechXchange Korea</span>
+    <span><span class="dot">●</span> 01 / 04</span>
+  </div>
+</section>
+
+<!-- ===================== PAGE 2 — SCHEMA ===================== -->
+<section class="page">
+  <div class="kicker">Schema</div>
+  <h1 style="font-size:27px;">한 컬렉션, 두 종류의 문서</h1>
+  <p class="lead">모든 KG 데이터는 <b>평범한 JSON 문서</b>입니다. <span class="hl">kind</span> 값이
+    <b>entity</b>면 노드, <b>edge</b>면 관계(트리플)입니다. 둘 다 <code style="font-family:'IBM Plex Mono';font-size:11px">doc_id</code>로
+    "어느 원문에서 나왔는지"를 추적하고, <code style="font-family:'IBM Plex Mono';font-size:11px">norm</code> 계열 필드로 표기 흔들림을 흡수합니다.</p>
+
+  <div class="twocol">
+    <div class="card kind-e">
+      <div class="ct"><span class="pill e">kind: "entity"</span><b>엔티티 — 노드</b></div>
+      <div class="cd">개념·기관·기술 등 "무엇"</div>
+    </div>
+    <div class="card kind-r">
+      <div class="ct"><span class="pill r">kind: "edge"</span><b>엣지 — 관계 트리플</b></div>
+      <div class="cd">(출발)─관계→(도착) "어떻게 연결"</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2><span class="num">A</span>엔티티 문서 (실데이터)</h2>
+<pre>{
+  <span class="k">"kind"</span>: <span class="e">"entity"</span>,
+  <span class="k">"name"</span>: <span class="s">"이상거래탐지시스템(FDS)"</span>,   <span class="c">// 원문 표기 그대로 (표시용)</span>
+  <span class="k">"norm"</span>: <span class="s">"이상거래탐지시스템"</span>,        <span class="c">// 정규화 키 — 매칭·중복병합용</span>
+  <span class="k">"type"</span>: <span class="s">"technology"</span>,            <span class="c">// LLM이 분류한 종류</span>
+  <span class="k">"doc_id"</span>: <span class="s">"98b3454c…"</span>            <span class="c">// 출처 문서 (registry와 연결)</span>
+}</pre>
+  </div>
+
+  <div class="sec">
+    <h2><span class="num">B</span>엣지 문서 — 트리플 (실데이터)</h2>
+<pre>{
+  <span class="k">"kind"</span>: <span class="v">"edge"</span>,
+  <span class="k">"src"</span>: <span class="s">"마이데이터"</span>,  <span class="k">"rel"</span>: <span class="e">"regulates_by"</span>,  <span class="k">"dst"</span>: <span class="s">"신용정보법"</span>,
+  <span class="c">//  └─ 출발 노드 ─────── 관계 라벨 ────────── 도착 노드</span>
+  <span class="k">"src_norm"</span>: <span class="s">"마이데이터"</span>,  <span class="k">"dst_norm"</span>: <span class="s">"신용정보법"</span>,  <span class="c">// 정규화 트리플</span>
+  <span class="k">"doc_id"</span>: <span class="s">"51582e40…"</span>
+}</pre>
+    <p style="margin-top:8px;font-size:12.5px;color:var(--ink2);">→ 읽으면
+      <b>"마이데이터는 신용정보법의 규율을 받는다"</b>. 이런 행(=문서)이 51개 나열된
+      <b>엣지 리스트</b>가 곧 그래프입니다.</p>
+  </div>
+
+  <div class="note">왜 <code style="font-family:'IBM Plex Mono';color:var(--graph)">norm</code>이 따로 있나?
+    "마이데이터"와 "마이데이터 사업자", "FDS"와 "이상거래탐지시스템(FDS)"를 <b>한 노드로 묶기</b> 위해서입니다.
+    매칭·중복제거는 항상 정규화 키로 하고, 화면에는 원문 표기(<code style="font-family:'IBM Plex Mono';color:var(--graph)">name</code>)를 보여줍니다.</p>
+
+  <div class="footer">
+    <span>지식그래프를 AstraDB에 NoSQL로 담는 법</span>
+    <span><span class="dot">●</span> 02 / 04</span>
+  </div>
+</section>
+
+<!-- ===================== PAGE 3 — LIVE DATA ===================== -->
+<section class="page">
+  <div class="kicker">Live Data</div>
+  <h1 style="font-size:27px;">실제로 들어있는 그래프</h1>
+  <p class="lead">아래는 운영 중인 AstraDB에서 그대로 가져온 트리플입니다.
+    평평한 엣지 리스트지만, <code style="font-family:'IBM Plex Mono';font-size:11px">src_norm</code>으로 모으면 이렇게 연결됩니다.</p>
+
+  <div class="graphwrap" style="margin-top:12px;">
+    <svg viewBox="0 0 760 230" width="100%" style="display:block;">
+      <defs>
+        <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#b45309"/>
+        </marker>
+        <style>
+          .edge{stroke:#e9c893; stroke-width:1.6; fill:none; marker-end:url(#ar);}
+          .rl{font-family:'IBM Plex Mono',monospace; font-size:10px; fill:#b45309; font-weight:600;}
+          .nd text{font-family:'IBM Plex Sans KR',sans-serif; font-size:11.5px; font-weight:600; fill:#16161d;}
+          .nd rect{fill:#fff; stroke:#e9c893; stroke-width:1.4;}
+          .hub rect{fill:#fdf0dd; stroke:#b45309; stroke-width:2;}
+        </style>
+      </defs>
+      <!-- edges -->
+      <path class="edge" d="M250,115 L430,55"/>
+      <path class="edge" d="M250,115 L430,175"/>
+      <path class="edge" d="M250,115 L70,55"/>
+      <path class="edge" d="M250,115 L70,180"/>
+      <!-- edge labels -->
+      <text class="rl" x="335" y="78">regulates_by</text>
+      <text class="rl" x="338" y="150">related_to</text>
+      <text class="rl" x="118" y="78">applied_in</text>
+      <text class="rl" x="120" y="152">part_of ◂</text>
+      <!-- hub -->
+      <g class="nd hub"><rect x="180" y="98" width="140" height="34" rx="9"/>
+        <text x="250" y="120" text-anchor="middle">마이데이터</text></g>
+      <!-- right nodes -->
+      <g class="nd"><rect x="430" y="38" width="155" height="33" rx="9"/>
+        <text x="507" y="60" text-anchor="middle">신용정보법</text></g>
+      <g class="nd"><rect x="430" y="158" width="135" height="33" rx="9"/>
+        <text x="497" y="180" text-anchor="middle">접근매체</text></g>
+      <!-- left nodes (incoming) -->
+      <g class="nd"><rect x="0" y="38" width="135" height="33" rx="9"/>
+        <text x="67" y="60" text-anchor="middle">가명정보</text></g>
+      <g class="nd"><rect x="0" y="163" width="150" height="33" rx="9"/>
+        <text x="75" y="185" text-anchor="middle">의심거래보고(STR)</text></g>
+    </svg>
+  </div>
+
+  <div class="twocol" style="grid-template-columns:1.15fr .85fr; margin-top:16px;">
+    <div>
+      <h2 style="font-size:15px;">엣지 리스트 (원본)</h2>
+      <div class="triples" style="margin-top:6px;">
+        <div><span class="src">마이데이터</span> <span class="rel">regulates_by</span><span class="arw">→</span> <span class="dst">신용정보법</span></div>
+        <div><span class="src">마이데이터</span> <span class="rel">related_to</span><span class="arw">→</span> <span class="dst">접근매체</span></div>
+        <div><span class="src">가명정보</span> <span class="rel">applied_in</span><span class="arw">→</span> <span class="dst">마이데이터·데이터결합</span></div>
+        <div><span class="src">의심거래보고(STR)</span> <span class="rel">part_of</span><span class="arw">→</span> <span class="dst">특정금융정보법</span></div>
+        <div><span class="src">Docling</span> <span class="rel">requires</span><span class="arw">→</span> <span class="dst">Ruff</span></div>
+        <div><span class="src">Langflow</span> <span class="rel">can_be_deployed_using</span><span class="arw">→</span> <span class="dst">Docker</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 style="font-size:15px;">관계 라벨 분포</h2>
+      <div class="bars2" style="margin-top:8px;">
+        <span class="rl">applies_to</span><span class="bk"><i style="width:100%"></i></span><span class="vn">7</span>
+        <span class="rl">related_to</span><span class="bk"><i style="width:72%"></i></span><span class="vn">5</span>
+        <span class="rl">integrates_with</span><span class="bk"><i style="width:72%"></i></span><span class="vn">5</span>
+        <span class="rl">regulates</span><span class="bk"><i style="width:58%"></i></span><span class="vn">4</span>
+        <span class="rl">part_of</span><span class="bk"><i style="width:43%"></i></span><span class="vn">3</span>
+        <span class="rl">requires</span><span class="bk"><i style="width:29%"></i></span><span class="vn">2</span>
+        <span class="rl">+ 22 종</span><span class="bk"><i style="width:15%"></i></span><span class="vn">각 1</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">관계 라벨(<code style="font-family:'IBM Plex Mono';color:var(--graph)">rel</code>)은
+    LLM이 자유 추출하되 <b>snake_case 통제 어휘로 정규화</b>합니다(한글 라벨 → 영문 표준화).
+    그래서 같은 의미의 관계가 제각각 흩어지지 않고 위처럼 집계됩니다.</p>
+
+  <div class="footer">
+    <span>지식그래프를 AstraDB에 NoSQL로 담는 법 · 라이브 스냅샷</span>
+    <span><span class="dot">●</span> 03 / 04</span>
+  </div>
+</section>
+
+<!-- ===================== PAGE 4 — WHY + HOW ===================== -->
+<section class="page">
+  <div class="kicker">Design · Query</div>
+  <h1 style="font-size:27px;">왜 이렇게 했고, 어떻게 동작하나</h1>
+
+  <div class="sec">
+    <h2><span class="num">＃</span>설계 선택 3가지</h2>
+    <div class="why">
+      <div class="w"><div class="wn">1</div><div>
+        <div class="wt">그래프 DB를 쓰지 않는다</div>
+        <div class="wd">AstraDB <b>Data API(문서형 NoSQL)</b>에 JSON으로 저장. Gremlin·Cypher 같은
+          그래프 순회 엔진이 없습니다. 운영 부담이 적고, RAG에 필요한 건 <b>작은 1-홉 이웃</b>이라 충분합니다.</div>
+      </div></div>
+      <div class="w"><div class="wn">2</div><div>
+        <div class="wt">탐색은 앱이 메모리에서 한다</div>
+        <div class="wd">질의 때 <code>kg</code> 컬렉션을 전부 로드 → 파이썬에서
+          <code>kind</code>로 노드/엣지를 나누고, 질문 관련도로 점수를 매겨 1-홉 서브그래프를 만듭니다.
+          KG가 100건으로 작기에 가능한 단순함입니다.</div>
+      </div></div>
+      <div class="w"><div class="wn">3</div><div>
+        <div class="wt">정규화 필드로 노드를 병합한다</div>
+        <div class="wd"><code>norm</code>·<code>src_norm</code>·<code>dst_norm</code>이 표기 흔들림을 흡수해
+          "마이데이터 = 마이데이터 사업자"를 한 노드로, 중복 엣지를 한 줄로 정리합니다.</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2><span class="num">→</span>graph 질의가 답이 되기까지</h2>
+    <div class="flow">
+      <div class="st"><span class="si">1</span><span class="sx"><b>라우터</b> — granite LLM이 질문을 보고 <code>{"graph": true}</code>로 그래프 도구를 선택</span></div>
+      <div class="st"><span class="si">2</span><span class="sx"><b>전체 로드</b> — <code>kg</code> 컬렉션을 페이지네이션으로 모두 읽어 노드/엣지로 분리</span></div>
+      <div class="st"><span class="si">3</span><span class="sx"><b>관련도 정렬</b> — 질문 토큰·벡터 시드와 겹치는 엔티티/엣지에 가점, 점수>0만 유지</span></div>
+      <div class="st"><span class="si">4</span><span class="sx"><b>1-홉 구성</b> — 정규화 키로 중복·자기참조 제거 → 엔티티 칩 + 엣지 트리플로 정리</span></div>
+      <div class="st"><span class="si">5</span><span class="sx"><b>합성</b> — 이 서브그래프를 컨텍스트로 granite가 답변 생성, UI는 같은 서브그래프를 근거 패널로 노출</span></div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:16px;">
+    <b>요약</b> — AstraDB에는 "노드와 엣지를 적은 JSON 문서"가 한 컬렉션에 평평하게 들어있을 뿐입니다.
+    그래프의 "연결"은 저장이 아니라 <b>질의 시점에 앱이 정규화 키로 이어 붙여</b> 만들어집니다.
+    작은 도메인 KG에 맞는, 단순하고 설명 가능한 설계입니다.</p>
+
+  <div class="footer">
+    <span>Built with IBM watsonx.data · watsonx.ai · OpenShift</span>
+    <span><span class="dot">●</span> 04 / 04</span>
+  </div>
+</section>
+
+</body>
+</html>

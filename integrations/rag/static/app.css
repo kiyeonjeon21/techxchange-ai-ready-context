@@ -122,8 +122,13 @@ details.panel>summary .n{font-family:var(--mono);color:var(--txt-faint)}
 .kg .rel::before{left:0}.kg .rel::after{right:0}
 .kg .rel span{position:absolute;right:2px;top:-3px;color:var(--amber-dim)}
 
-/* sql table */
+/* sql: generated query + results */
+.sqlcode{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--violet);
+  background:rgba(167,139,250,.07);border:1px solid var(--violet-dim);border-radius:8px;
+  padding:9px 11px;margin:0 0 10px;white-space:pre-wrap;word-break:break-word;overflow-x:auto}
 .sqlt{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+.sqlt th{padding:6px 10px;text-align:left;border-bottom:1px solid var(--violet-dim);
+  color:var(--violet);font-weight:600;white-space:nowrap}
 .sqlt td{padding:6px 10px;border-bottom:1px solid var(--line-soft);color:var(--txt-dim)}
 .sqlt tr td:first-child{color:var(--violet)}
 .empty{font-family:var(--mono);font-size:12px;color:var(--txt-faint);padding:6px 2px}

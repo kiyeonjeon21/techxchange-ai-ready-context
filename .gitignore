@@ -39,9 +39,11 @@ package-lock.json
 *.png
 *.jpg
 *.jpeg
-# keep rendered architecture exports that are part of the docs
+# keep rendered architecture exports + presentation assets that are part of the docs
 !docs/*.png
 !docs/*.pdf
+!docs/img/
+!docs/img/*.png
 
 # ---- OS / editor ----
 .DS_Store

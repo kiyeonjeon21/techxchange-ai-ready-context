@@ -7,6 +7,8 @@ print(f"[reindex] {len(docs)} tracked sources")
 for d in docs:
     src = d.get("source"); title = d.get("title") or ""
     if not src: continue
+    if src.startswith(("file:", "inline:")):     # UI-uploaded/pasted: no re-fetchable source
+        print(f"[reindex] skip (not re-fetchable): {src}"); continue
     print(f"[reindex] -> {src}")
     subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "ingest.py"), src, "--title", title])
 print("[reindex] done")
