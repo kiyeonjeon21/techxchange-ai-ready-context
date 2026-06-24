@@ -220,3 +220,33 @@ def iceberg_upsert_doc(doc_id, title, source, chunks, entities, edges):
     esc = lambda x: str(x).replace("'", "''")
     presto_exec(f"DELETE FROM {t} WHERE doc_id='{esc(doc_id)}'")
     presto_exec(f"INSERT INTO {t} VALUES ('{esc(doc_id)}','{esc(title)}','{esc(source)}',{int(chunks)},{int(entities)},{int(edges)})")
+
+# ---- document-derived structured table (the SQL tool's "third form" of an ingested doc) ----
+# Each ingested regulatory doc yields a small obligations table (party/obligation/article/penalty),
+# extracted by the LLM at ingest time. text2sql can then query it alongside the AML dataset, so the
+# same document is genuinely available as vector (OpenSearch), graph (KG) AND structured rows (here).
+OBLIG_TABLE = "obligations"
+_OBLIG_COLS = ("doc_id", "law", "party", "obligation", "article", "penalty_text", "penalty_krw")
+
+def obligations_ensure():
+    presto_exec(f"CREATE SCHEMA IF NOT EXISTS {PRESTO_CATALOG}.{PRESTO_SCHEMA}")
+    presto_exec(f"""CREATE TABLE IF NOT EXISTS {PRESTO_CATALOG}.{PRESTO_SCHEMA}.{OBLIG_TABLE} (
+        doc_id varchar, law varchar, party varchar, obligation varchar,
+        article varchar, penalty_text varchar, penalty_krw double
+    ) WITH (format='PARQUET')""")
+
+def obligations_upsert(doc_id, rows):
+    """Idempotent per-doc upsert: delete this doc's rows, then bulk-insert the new ones."""
+    t = f"{PRESTO_CATALOG}.{PRESTO_SCHEMA}.{OBLIG_TABLE}"
+    esc = lambda x: str(x).replace("'", "''")
+    presto_exec(f"DELETE FROM {t} WHERE doc_id='{esc(doc_id)}'")
+    if not rows:
+        return
+    def lit(v):
+        if v is None or v == "":
+            return "NULL"
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return str(v)
+        return "'" + esc(v) + "'"
+    vals = ",".join("(" + ",".join(lit(r.get(c)) for c in _OBLIG_COLS) + ")" for r in rows)
+    presto_exec(f"INSERT INTO {t} VALUES {vals}")

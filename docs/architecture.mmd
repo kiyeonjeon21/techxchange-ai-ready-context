@@ -1,77 +1,68 @@
 ---
-title: Agentic RAG + Knowledge Graph on OpenShift (watsonx.data + watsonx.ai + AstraDB)
+title: Agentic RAG + Knowledge Graph on OpenShift — watsonx.data · watsonx.ai · Langflow · Docling
 ---
 flowchart TB
   user(["User"])
-  src[/"Source documents<br/>URL / file"/]
 
-  subgraph OCP["OpenShift cluster (<CLUSTER_NAME>)"]
+  subgraph OCP["OpenShift cluster (&lt;CLUSTER_NAME&gt;)"]
     subgraph GENAI["ns: genai-apps"]
-      subgraph RAGUI["rag-ui pod — FastAPI single container (serves UI + hosts agent)"]
-        chat["Chat UI (/)<br/>answer + citations<br/>+ tool trace (vector/graph/sql)<br/>expand: RAG chunks / KG subgraph / SQL"]
-        router{"LLM router<br/>pick tools"}
-        subgraph TOOLS["Retrieval tools (/api/chat)"]
-          tvec["Vector search"]
-          tkg["Graph lookup"]
-          tsql["SQL query"]
-        end
-        synth["LLM synthesis<br/>answer + citations"]
+      chat["rag-ui — Chat UI · /api/chat<br/>answer · citations · tool-trace · evidence"]
+      langflow{"Langflow Agent — IBM open source<br/>orchestration · tool-calling — MAIN"}
+      pyagent{"Python agent<br/>router · synth — fallback"}
+      subgraph TOOLS["Retrieval tools — rag-ui /api/tool/* (token-gated)"]
+        tvec["Vector search<br/>hybrid kNN + BM25"]
+        tkg["Graph lookup<br/>embedding seed → 1-hop"]
+        tsql["text-to-SQL<br/>guarded SELECT + self-correction"]
       end
-      langflow["Langflow<br/>alt visual builder / chat"]
-      docling["docling-serve<br/>document parsing"]
-      dgraph["docling-graph<br/>KG extraction (CLI pod)"]
-      cron["CronJob rag-reindex<br/>*/30 incremental, hash-skip"]
+      subgraph INGEST["Ingestion"]
+        src[/"Documents<br/>text · URL · PDF"/] --> docling["docling-serve<br/>IBM open source"]
+        kgx["KG extract<br/>LLM + entity resolution + ontology"]
+        seed["seed_aml.py<br/>AML demo dataset"]
+      end
+      ops["docling-graph (optional)<br/>CronJob rag-reindex */30"]
     end
-    subgraph WXD["ns: cpd — watsonx.data (Software Hub 5.3.1)"]
-      os[("OpenSearch<br/>vectors kNN lucene dim768")]
+    subgraph WXD["ns: cpd — IBM watsonx.data (Software Hub, in-cluster)"]
+      os[("OpenSearch<br/>kNN lucene dim768 + BM25")]
+      iceberg[("Iceberg<br/>rag.corpus · aml.*")]
       presto["Presto (PrestoDB)"]
-      spark["Spark engine<br/>(scale-out batch)"]
-      iceberg[("Iceberg<br/>iceberg_data.rag.corpus")]
+      spark["Spark engine"]
       minio[("MinIO object storage")]
     end
   end
 
-  subgraph SAAS["SaaS (external)"]
-    wxai["watsonx.ai<br/>granite-3-8b-instruct<br/>+ granite embed dim768"]
-    astra[("AstraDB NoSQL<br/>KG entities+edges, doc registry")]
+  subgraph MANAGED["IBM watsonx — managed cloud / SaaS"]
+    wxai["watsonx.ai · granite<br/>chat (4-h-small · 3-8b) + embed-278m"]
+    astra[("DataStax AstraDB<br/>IBM watsonx.data (managed) — KG")]
   end
 
-  %% ---------- Ingestion (write path) ----------
-  src --> docling
-  docling --> chunk["chunk text"]
-  chunk --> emb["embed chunks"]
-  emb -. embeddings .-> wxai
-  emb --> os
-  docling --> kgx["KG extract<br/>(LLM, chat API)"]
-  kgx -. extract .-> wxai
-  kgx --> astra
-  chunk --> presto
-  presto --> iceberg
+  %% ---- query (read): Chat UI delegates to Langflow, Python agent is the fallback ----
+  user --> chat
+  chat ==>|main| langflow
+  chat -. fallback .-> pyagent
+  langflow ==> TOOLS
+  pyagent -.-> TOOLS
+  tvec --> os
+  tkg --> astra
+  tsql --> presto --> iceberg
+  langflow <-. granite generate .-> wxai
+
+  %% ---- ingestion (write) ----
+  docling -->|chunks + embed| os
+  docling --> kgx --> astra
+  docling -->|inventory| iceberg
+  seed --> iceberg
+  docling -. embed / extract .-> wxai
   iceberg <--> minio
-  os <--> minio
-  cron --> docling
-  dgraph -. richer KG (optional) .-> astra
-  spark -. large corpora .-> iceberg
+  spark -. batch .-> iceberg
+  ops -. maintain .-> docling
 
-  %% ---------- Query (read path) ----------
-  user --> chat --> router
-  router -. embed query .-> wxai
-  router --> tvec --> os
-  router --> tkg --> astra
-  router --> tsql --> presto
-  presto --> iceberg
-  tvec --> synth
-  tkg --> synth
-  tsql --> synth
-  synth -. generate .-> wxai
-  synth --> chat
-  langflow -. alt UI .-> chat
-
-  classDef saas fill:#e8f0fe,stroke:#4285f4,color:#111
+  classDef ibm fill:#dbeafe,stroke:#0f62fe,color:#111
+  classDef ibmoss fill:#d7f5ee,stroke:#0a9396,color:#111
   classDef store fill:#fff4e5,stroke:#f5a623,color:#111
-  classDef ocp fill:#eafaf1,stroke:#27ae60,color:#111
   classDef app fill:#ede7ff,stroke:#7c5cff,color:#111
-  class wxai,astra saas
-  class os,iceberg,minio store
-  class langflow,docling,dgraph,cron,presto,spark ocp
-  class chat,router,tvec,tkg,tsql,synth app
+  class wxai ibm
+  class langflow,docling ibmoss
+  class os,iceberg,minio,astra store
+  class chat,tvec,tkg,tsql,pyagent,kgx,seed,ops,presto,spark app
+  style WXD fill:#eef4ff,stroke:#0f62fe,stroke-width:2px
+  style MANAGED fill:#eef4ff,stroke:#0f62fe,stroke-width:1px

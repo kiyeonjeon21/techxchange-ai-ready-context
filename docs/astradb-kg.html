@@ -165,19 +165,19 @@
       엔티티와 관계를 어떻게 저장하고, 어떻게 다시 그래프로 되살려 쓰는지 —
       라이브 데이터로 설명합니다.</p>
     <div class="tagrow">
-      <span class="tag g">AstraDB · DataStax</span>
+      <span class="tag g">DataStax AstraDB · IBM watsonx.data</span>
       <span class="tag">JSON Data API</span>
       <span class="tag">단일 컬렉션 + kind 필드</span>
-      <span class="tag">앱-사이드 1-홉 탐색</span>
+      <span class="tag">임베딩 시드 → 1-홉</span>
     </div>
   </div>
 
   <div class="mid">
     <div class="stats">
       <div class="s"><div class="n">2</div><div class="l">컬렉션<br/>kg · doc_registry</div></div>
-      <div class="s g"><div class="n">49</div><div class="l">엔티티(노드)<br/>kind = "entity"</div></div>
-      <div class="s g"><div class="n">51</div><div class="l">엣지(관계)<br/>kind = "edge"</div></div>
-      <div class="s"><div class="n">8</div><div class="l">적재 문서<br/>한·영 코퍼스</div></div>
+      <div class="s g"><div class="n">100</div><div class="l">엔티티(노드)<br/>kind = "entity" (+emb)</div></div>
+      <div class="s g"><div class="n">108</div><div class="l">엣지(관계)<br/>kind = "edge"</div></div>
+      <div class="s"><div class="n">8</div><div class="l">적재 문서<br/>md · PDF · URL</div></div>
     </div>
   </div>
 
@@ -186,9 +186,9 @@
 <span class="cm"># Astra keyspace: default_keyspace</span>
 <span class="ks">default_keyspace</span>
  ├─ <span class="c">kg</span>            <span class="cm">// 지식그래프 = 엔티티 + 엣지 (한 컬렉션에 같이)</span>
- │    ├─ {<span class="c">kind:"entity"</span>} × 49   <span class="cm">노드</span>
- │    └─ {<span class="c">kind:"edge"</span>}   × 51   <span class="cm">관계(트리플)</span>
- └─ <span class="cv">doc_registry</span>  <span class="cm">// 적재 문서 추적 × 8</span>
+ │    ├─ {<span class="c">kind:"entity"</span>} × 100  <span class="cm">노드 (+ emb: 768-d 임베딩)</span>
+ │    └─ {<span class="c">kind:"edge"</span>}   × 108  <span class="cm">관계(트리플)</span>
+ └─ <span class="cv">doc_registry</span>  <span class="cm">// 적재 문서 추적 × 8 (md·PDF·URL)</span>
     </div>
     <p class="note" style="margin-top:10px;">핵심: <b>테이블도 그래프 엔진도 없습니다.</b>
       노드와 엣지를 <b>같은 컬렉션</b>에 넣고 <code style="font-family:'IBM Plex Mono';color:var(--graph)">kind</code>
@@ -226,7 +226,8 @@
   <span class="k">"kind"</span>: <span class="e">"entity"</span>,
   <span class="k">"name"</span>: <span class="s">"이상거래탐지시스템(FDS)"</span>,   <span class="c">// 원문 표기 그대로 (표시용)</span>
   <span class="k">"norm"</span>: <span class="s">"이상거래탐지시스템"</span>,        <span class="c">// 정규화 키 — 매칭·중복병합용</span>
-  <span class="k">"type"</span>: <span class="s">"technology"</span>,            <span class="c">// LLM이 분류한 종류</span>
+  <span class="k">"type"</span>: <span class="s">"system"</span>,                <span class="c">// 통제 온톨로지 (law·regulator·system·…)</span>
+  <span class="k">"emb"</span>: <span class="v">[0.013, -0.021, …]</span>,        <span class="c">// granite 768-d 임베딩 — 시맨틱 시드·해소용</span>
   <span class="k">"doc_id"</span>: <span class="s">"98b3454c…"</span>            <span class="c">// 출처 문서 (registry와 연결)</span>
 }</pre>
   </div>
@@ -235,19 +236,19 @@
     <h2><span class="num">B</span>엣지 문서 — 트리플 (실데이터)</h2>
 <pre>{
   <span class="k">"kind"</span>: <span class="v">"edge"</span>,
-  <span class="k">"src"</span>: <span class="s">"마이데이터"</span>,  <span class="k">"rel"</span>: <span class="e">"regulates_by"</span>,  <span class="k">"dst"</span>: <span class="s">"신용정보법"</span>,
-  <span class="c">//  └─ 출발 노드 ─────── 관계 라벨 ────────── 도착 노드</span>
-  <span class="k">"src_norm"</span>: <span class="s">"마이데이터"</span>,  <span class="k">"dst_norm"</span>: <span class="s">"신용정보법"</span>,  <span class="c">// 정규화 트리플</span>
+  <span class="k">"src"</span>: <span class="s">"본인신용정보관리업"</span>,  <span class="k">"rel"</span>: <span class="e">"complies_with"</span>,  <span class="k">"dst"</span>: <span class="s">"신용정보법"</span>,
+  <span class="c">//       └─ 출발 노드 ──────────── 관계 라벨 ──────────── 도착 노드</span>
+  <span class="k">"src_norm"</span>: <span class="s">"마이데이터"</span>,  <span class="k">"dst_norm"</span>: <span class="s">"신용정보법"</span>,  <span class="c">// 별칭→캐논 (본인신용정보관리업→마이데이터)</span>
   <span class="k">"doc_id"</span>: <span class="s">"51582e40…"</span>
 }</pre>
     <p style="margin-top:8px;font-size:12.5px;color:var(--ink2);">→ 읽으면
-      <b>"마이데이터는 신용정보법의 규율을 받는다"</b>. 이런 행(=문서)이 51개 나열된
+      <b>"마이데이터(=본인신용정보관리업)는 신용정보법을 준수한다"</b>. 이런 행(=문서)이 108개 나열된
       <b>엣지 리스트</b>가 곧 그래프입니다.</p>
   </div>
 
-  <div class="note">왜 <code style="font-family:'IBM Plex Mono';color:var(--graph)">norm</code>이 따로 있나?
+  <div class="note">왜 <code style="font-family:'IBM Plex Mono';color:var(--graph)">norm</code>과 <code style="font-family:'IBM Plex Mono';color:var(--graph)">emb</code>이 있나?
     "마이데이터"와 "마이데이터 사업자", "FDS"와 "이상거래탐지시스템(FDS)"를 <b>한 노드로 묶기</b> 위해서입니다.
-    매칭·중복제거는 항상 정규화 키로 하고, 화면에는 원문 표기(<code style="font-family:'IBM Plex Mono';color:var(--graph)">name</code>)를 보여줍니다.</p>
+    <b>2단 엔티티 해소</b> — ① 정규화 키(<code style="font-family:'IBM Plex Mono';color:var(--graph)">norm</code>)로 표기 흔들림 흡수, ② 임베딩(<code style="font-family:'IBM Plex Mono';color:var(--graph)">emb</code>) 코사인으로 의미가 같은 별칭 병합. 화면엔 원문 표기(<code style="font-family:'IBM Plex Mono';color:var(--graph)">name</code>)를 보여줍니다.</p>
 
   <div class="footer">
     <span>지식그래프를 AstraDB에 NoSQL로 담는 법</span>
@@ -281,24 +282,24 @@
       <path class="edge" d="M250,115 L430,175"/>
       <path class="edge" d="M250,115 L70,55"/>
       <path class="edge" d="M250,115 L70,180"/>
-      <!-- edge labels -->
-      <text class="rl" x="335" y="78">regulates_by</text>
+      <!-- edge labels (all outgoing from hub) -->
+      <text class="rl" x="333" y="78">complies_with</text>
       <text class="rl" x="338" y="150">related_to</text>
-      <text class="rl" x="118" y="78">applied_in</text>
-      <text class="rl" x="120" y="152">part_of ◂</text>
+      <text class="rl" x="120" y="78">requires</text>
+      <text class="rl" x="118" y="152">defines</text>
       <!-- hub -->
       <g class="nd hub"><rect x="180" y="98" width="140" height="34" rx="9"/>
         <text x="250" y="120" text-anchor="middle">마이데이터</text></g>
       <!-- right nodes -->
       <g class="nd"><rect x="430" y="38" width="155" height="33" rx="9"/>
-        <text x="507" y="60" text-anchor="middle">신용정보법</text></g>
+        <text x="507" y="60" text-anchor="middle">전자금융거래법</text></g>
       <g class="nd"><rect x="430" y="158" width="135" height="33" rx="9"/>
         <text x="497" y="180" text-anchor="middle">접근매체</text></g>
-      <!-- left nodes (incoming) -->
+      <!-- left nodes -->
       <g class="nd"><rect x="0" y="38" width="135" height="33" rx="9"/>
-        <text x="67" y="60" text-anchor="middle">가명정보</text></g>
-      <g class="nd"><rect x="0" y="163" width="150" height="33" rx="9"/>
-        <text x="75" y="185" text-anchor="middle">의심거래보고(STR)</text></g>
+        <text x="67" y="60" text-anchor="middle">OAuth 2.0</text></g>
+      <g class="nd"><rect x="0" y="163" width="155" height="33" rx="9"/>
+        <text x="77" y="185" text-anchor="middle">본인신용정보관리업</text></g>
     </svg>
   </div>
 
@@ -306,24 +307,24 @@
     <div>
       <h2 style="font-size:15px;">엣지 리스트 (원본)</h2>
       <div class="triples" style="margin-top:6px;">
-        <div><span class="src">마이데이터</span> <span class="rel">regulates_by</span><span class="arw">→</span> <span class="dst">신용정보법</span></div>
+        <div><span class="src">신용정보법</span> <span class="rel">regulates</span><span class="arw">→</span> <span class="dst">마이데이터</span></div>
         <div><span class="src">마이데이터</span> <span class="rel">related_to</span><span class="arw">→</span> <span class="dst">접근매체</span></div>
-        <div><span class="src">가명정보</span> <span class="rel">applied_in</span><span class="arw">→</span> <span class="dst">마이데이터·데이터결합</span></div>
-        <div><span class="src">의심거래보고(STR)</span> <span class="rel">part_of</span><span class="arw">→</span> <span class="dst">특정금융정보법</span></div>
-        <div><span class="src">Docling</span> <span class="rel">requires</span><span class="arw">→</span> <span class="dst">Ruff</span></div>
-        <div><span class="src">Langflow</span> <span class="rel">can_be_deployed_using</span><span class="arw">→</span> <span class="dst">Docker</span></div>
+        <div><span class="src">마이데이터</span> <span class="rel">requires</span><span class="arw">→</span> <span class="dst">OAuth 2.0</span></div>
+        <div><span class="src">본인신용정보관리업</span> <span class="rel">supervised_by</span><span class="arw">→</span> <span class="dst">금융위원회</span></div>
+        <div><span class="src">의심거래보고(STR)</span> <span class="rel">complies_with</span><span class="arw">→</span> <span class="dst">특정금융정보법</span></div>
+        <div><span class="src">마이데이터 사업자</span> <span class="rel">reports_to</span><span class="arw">→</span> <span class="dst">금융감독원</span></div>
       </div>
     </div>
     <div>
       <h2 style="font-size:15px;">관계 라벨 분포</h2>
       <div class="bars2" style="margin-top:8px;">
-        <span class="rl">applies_to</span><span class="bk"><i style="width:100%"></i></span><span class="vn">7</span>
-        <span class="rl">related_to</span><span class="bk"><i style="width:72%"></i></span><span class="vn">5</span>
-        <span class="rl">integrates_with</span><span class="bk"><i style="width:72%"></i></span><span class="vn">5</span>
-        <span class="rl">regulates</span><span class="bk"><i style="width:58%"></i></span><span class="vn">4</span>
-        <span class="rl">part_of</span><span class="bk"><i style="width:43%"></i></span><span class="vn">3</span>
-        <span class="rl">requires</span><span class="bk"><i style="width:29%"></i></span><span class="vn">2</span>
-        <span class="rl">+ 22 종</span><span class="bk"><i style="width:15%"></i></span><span class="vn">각 1</span>
+        <span class="rl">regulates</span><span class="bk"><i style="width:100%"></i></span><span class="vn">13</span>
+        <span class="rl">requires</span><span class="bk"><i style="width:92%"></i></span><span class="vn">12</span>
+        <span class="rl">applies_to</span><span class="bk"><i style="width:85%"></i></span><span class="vn">11</span>
+        <span class="rl">complies_with</span><span class="bk"><i style="width:77%"></i></span><span class="vn">10</span>
+        <span class="rl">defines</span><span class="bk"><i style="width:46%"></i></span><span class="vn">6</span>
+        <span class="rl">supervised_by</span><span class="bk"><i style="width:38%"></i></span><span class="vn">5</span>
+        <span class="rl">+ 27 종</span><span class="bk"><i style="width:18%"></i></span><span class="vn">각 1~</span>
       </div>
     </div>
   </div>
@@ -352,15 +353,16 @@
           그래프 순회 엔진이 없습니다. 운영 부담이 적고, RAG에 필요한 건 <b>작은 1-홉 이웃</b>이라 충분합니다.</div>
       </div></div>
       <div class="w"><div class="wn">2</div><div>
-        <div class="wt">탐색은 앱이 메모리에서 한다</div>
-        <div class="wd">질의 때 <code>kg</code> 컬렉션을 전부 로드 → 파이썬에서
-          <code>kind</code>로 노드/엣지를 나누고, 질문 관련도로 점수를 매겨 1-홉 서브그래프를 만듭니다.
-          KG가 100건으로 작기에 가능한 단순함입니다.</div>
+        <div class="wt">임베딩 시드 → 1-홉 이웃 조회</div>
+        <div class="wd">질문을 임베딩해 엔티티 <code>emb</code>와 코사인으로 <b>의미적 시드</b>를 고르고,
+          그 <b>1-홉 이웃 엣지만</b> <code>find($or/$in)</code>로 조회합니다. 이 AstraDB는 서버사이드
+          벡터 ANN을 지원하지 않아 코사인은 <b>앱-사이드</b>로 계산(KG 100건 규모라 충분).</div>
       </div></div>
       <div class="w"><div class="wn">3</div><div>
-        <div class="wt">정규화 필드로 노드를 병합한다</div>
-        <div class="wd"><code>norm</code>·<code>src_norm</code>·<code>dst_norm</code>이 표기 흔들림을 흡수해
-          "마이데이터 = 마이데이터 사업자"를 한 노드로, 중복 엣지를 한 줄로 정리합니다.</div>
+        <div class="wt">정규화 + 임베딩으로 노드를 병합한다</div>
+        <div class="wd"><code>norm</code>·<code>src_norm</code>·<code>dst_norm</code>이 표기 흔들림을 흡수하고,
+          <b>임베딩 코사인</b>이 의미가 같은 별칭을 추가 병합합니다(2단 해소).
+          엔티티 <code>type</code>은 통제 <b>온톨로지</b>로 고정합니다.</div>
       </div></div>
     </div>
   </div>
@@ -368,17 +370,17 @@
   <div class="sec">
     <h2><span class="num">→</span>graph 질의가 답이 되기까지</h2>
     <div class="flow">
-      <div class="st"><span class="si">1</span><span class="sx"><b>라우터</b> — granite LLM이 질문을 보고 <code>{"graph": true}</code>로 그래프 도구를 선택</span></div>
-      <div class="st"><span class="si">2</span><span class="sx"><b>전체 로드</b> — <code>kg</code> 컬렉션을 페이지네이션으로 모두 읽어 노드/엣지로 분리</span></div>
-      <div class="st"><span class="si">3</span><span class="sx"><b>관련도 정렬</b> — 질문 토큰·벡터 시드와 겹치는 엔티티/엣지에 가점, 점수>0만 유지</span></div>
-      <div class="st"><span class="si">4</span><span class="sx"><b>1-홉 구성</b> — 정규화 키로 중복·자기참조 제거 → 엔티티 칩 + 엣지 트리플로 정리</span></div>
-      <div class="st"><span class="si">5</span><span class="sx"><b>합성</b> — 이 서브그래프를 컨텍스트로 granite가 답변 생성, UI는 같은 서브그래프를 근거 패널로 노출</span></div>
+      <div class="st"><span class="si">1</span><span class="sx"><b>도구 선택</b> — 에이전트(Langflow · granite)가 관계형 질문에 <code>lookup_relationships</code>(graph) 도구를 호출</span></div>
+      <div class="st"><span class="si">2</span><span class="sx"><b>벡터 시드</b> — 질문 임베딩 ↔ 엔티티 <code>emb</code> 코사인으로 의미적으로 가까운 시드 엔티티 선정</span></div>
+      <div class="st"><span class="si">3</span><span class="sx"><b>1-홉 이웃 조회</b> — 시드에 연결된 엣지만 <code>find($or:[src_norm∈S, dst_norm∈S])</code>로 로드, 질문 언급에 가점</span></div>
+      <div class="st"><span class="si">4</span><span class="sx"><b>정리</b> — 정규화 키로 중복·자기참조 제거 → 엔티티 칩 + 엣지 트리플</span></div>
+      <div class="st"><span class="si">5</span><span class="sx"><b>합성</b> — 이 서브그래프를 컨텍스트로 답변 생성, UI는 같은 서브그래프를 근거 패널로 노출</span></div>
     </div>
   </div>
 
   <p class="note" style="margin-top:16px;">
-    <b>요약</b> — AstraDB에는 "노드와 엣지를 적은 JSON 문서"가 한 컬렉션에 평평하게 들어있을 뿐입니다.
-    그래프의 "연결"은 저장이 아니라 <b>질의 시점에 앱이 정규화 키로 이어 붙여</b> 만들어집니다.
+    <b>요약</b> — AstraDB에는 "노드(+임베딩)와 엣지를 적은 JSON 문서"가 한 컬렉션에 평평하게 들어있을 뿐입니다.
+    그래프의 "연결"은 저장이 아니라 <b>질의 시점에 의미 임베딩으로 시드를 찾고 정규화 키로 이어 붙여</b> 만들어집니다.
     작은 도메인 KG에 맞는, 단순하고 설명 가능한 설계입니다.</p>
 
   <div class="footer">

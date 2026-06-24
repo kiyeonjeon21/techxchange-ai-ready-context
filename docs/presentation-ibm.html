@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>AI-Ready Context — Agentic RAG + Knowledge Graph on watsonx (IBM Carbon)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=IBM+Plex+Sans+KR:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ===== IBM Carbon Design System tokens (from DESIGN.md) ===== */
+  :root{
+    --blue:#0f62fe; --blue-60:#0043ce; --blue-80:#002d9c;
+    --ink:#161616; --ink-muted:#525252; --ink-subtle:#8c8c8c;
+    --canvas:#ffffff; --s1:#f4f4f4; --s2:#e0e0e0; --hair:#e0e0e0;
+    --inv:#161616; --inv-s1:#262626; --inv-ink:#ffffff; --inv-muted:#c6c6c6;
+    --ok:#24a148; --warn:#f1c21b; --err:#da1e28;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{font-family:"IBM Plex Sans","IBM Plex Sans KR",Helvetica,Arial,sans-serif;
+    color:var(--ink); background:var(--s2);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    counter-reset:pg;}
+
+  @page{ size:13.333in 7.5in; margin:0; }
+
+  .slide{
+    width:13.333in; height:7.5in; background:var(--canvas);
+    padding:0.66in 0.78in 0.62in; position:relative; overflow:hidden;
+    page-break-after:always; display:flex; flex-direction:column;
+    counter-increment:pg;
+  }
+  .slide:last-child{page-break-after:auto;}
+
+  /* ===== shared chrome ===== */
+  .bars{display:inline-flex; gap:2.5px; vertical-align:middle;}
+  .bars i{width:4px; height:18px; background:var(--ink); display:block;}
+  .bars i:nth-child(even){background:var(--blue);}
+  .eyebrow{font-size:14px; font-weight:400; letter-spacing:.16px; color:var(--blue);
+    margin:0 0 14px; display:flex; align-items:center; gap:12px;}
+  .eyebrow .rule{flex:0 0 28px; height:1px; background:var(--blue);}
+  h1.title{font-weight:300; font-size:42px; line-height:1.18; letter-spacing:0; margin:0 0 4px;}
+  h2.title{font-weight:300; font-size:34px; line-height:1.2; margin:0 0 6px;}
+  .lead{font-size:18px; line-height:1.5; color:var(--ink-muted); font-weight:400; margin:.2em 0 0; max-width:10.5in;}
+  .body{flex:1 1 auto; min-height:0; margin-top:18px;}
+  b,strong{font-weight:600;}
+  .blue{color:var(--blue);}
+  .muted{color:var(--ink-muted);}
+
+  .foot{position:absolute; left:0.78in; right:0.78in; bottom:0.42in;
+    display:flex; justify-content:space-between; align-items:center;
+    border-top:1px solid var(--hair); padding-top:8px;
+    font-size:12px; letter-spacing:.32px; color:var(--ink-subtle);}
+  .foot .n::after{counter-reset:none; content:counter(pg,decimal-leading-zero) " / 29";}
+  .foot .bars i{height:12px; width:3px;}
+  .foot .right{display:flex; align-items:center; gap:12px;}
+
+  /* ===== cover ===== */
+  .cover{justify-content:center;}
+  .cover .bars i{height:28px; width:6px;}
+  .cover h1{font-weight:300; font-size:78px; line-height:1.08; letter-spacing:-.5px; margin:26px 0 0;}
+  .cover .sub{font-weight:300; font-size:30px; line-height:1.25; color:var(--ink); margin:14px 0 0; max-width:11in;}
+  .cover .accent{width:64px; height:4px; background:var(--blue); margin:30px 0 26px;}
+  .cover .desc{font-size:18px; line-height:1.55; color:var(--ink-muted); max-width:9.4in;}
+  .cover .who{margin-top:auto; font-size:16px; letter-spacing:.16px; color:var(--ink);}
+  .cover .who .sm{color:var(--ink-muted);}
+
+  /* ===== bullets ===== */
+  ul.b{list-style:none; margin:0; padding:0;}
+  ul.b>li{position:relative; padding:0 0 0 22px; margin:0 0 14px; font-size:18px; line-height:1.5; letter-spacing:.16px;}
+  ul.b>li::before{content:""; position:absolute; left:0; top:.62em; width:8px; height:8px; background:var(--blue);}
+  ul.b>li ul{list-style:none; margin:8px 0 0; padding:0;}
+  ul.b>li ul li{position:relative; padding-left:18px; margin:5px 0; font-size:15px; color:var(--ink-muted);}
+  ul.b>li ul li::before{content:""; position:absolute; left:0; top:.62em; width:6px; height:1px; background:var(--ink-subtle);}
+  .kicker-line{font-size:20px; line-height:1.5; margin:18px 0 0;}
+
+  /* ===== numbered feature tiles ===== */
+  .tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:0; border-left:1px solid var(--hair);}
+  .tiles .t{border:1px solid var(--hair); border-left:none; padding:24px; min-height:3.1in;}
+  .tiles .t .no{font-weight:300; font-size:40px; color:var(--blue); line-height:1; margin-bottom:14px;}
+  .tiles .t h3{font-weight:600; font-size:19px; margin:0 0 8px; letter-spacing:.16px;}
+  .tiles .t p{font-size:15px; line-height:1.5; color:var(--ink-muted); margin:0;}
+
+  /* ===== carbon table ===== */
+  table.c{width:100%; border-collapse:collapse; font-size:15px; letter-spacing:.16px;}
+  table.c thead th{background:var(--s1); color:var(--ink); font-weight:600; text-align:left;
+    padding:12px 16px; border-bottom:1px solid var(--ink); font-size:13px;}
+  table.c td{padding:12px 16px; border-bottom:1px solid var(--hair); color:var(--ink-muted); vertical-align:top;}
+  table.c td:first-child{color:var(--ink); font-weight:600; white-space:nowrap;}
+  table.c tr.on td{background:var(--s1);}
+  table.c code, .mono{font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--ink);}
+
+  /* ===== code / flow block ===== */
+  pre.code{background:var(--inv); color:#e0e0e0; font-family:"IBM Plex Mono",monospace;
+    font-size:14px; line-height:1.65; padding:20px 22px; margin:0; white-space:pre; overflow:hidden;}
+  pre.code .k{color:#78a9ff;} pre.code .s{color:#a7f0ba;} pre.code .c{color:#8d8d8d; font-style:italic;}
+  pre.code .o{color:#ff7eb6;}
+  .flowcap{font-size:14px; color:var(--ink-muted); margin:14px 0 0; letter-spacing:.16px;}
+
+  /* ===== image frame ===== */
+  .imgwrap{height:100%; display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--hair); background:var(--s1); padding:14px;}
+  .imgwrap img{max-width:100%; max-height:100%; object-fit:contain; display:block;}
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:28px; height:100%;}
+  .split.right38{grid-template-columns:1.55fr 1fr;}
+  .split .col{min-width:0; display:flex; flex-direction:column; justify-content:center;}
+
+  /* ===== two-column text ===== */
+  .cols2{display:grid; grid-template-columns:1fr 1fr; gap:28px;}
+
+  /* ===== CTA / closing (inverse) ===== */
+  .slide.inv{background:var(--inv); color:var(--inv-ink);}
+  .slide.inv .eyebrow{color:#78a9ff;} .slide.inv .eyebrow .rule{background:#78a9ff;}
+  .slide.inv h1.title,.slide.inv h2.title{color:#fff;}
+  .slide.inv .lead{color:var(--inv-muted);}
+  .slide.inv ul.b>li{color:var(--inv-ink);}
+  .slide.inv .foot{border-top-color:var(--inv-s1); color:#8d8d8d;}
+  .slide.inv .foot .bars i{background:#525252;} .slide.inv .foot .bars i:nth-child(even){background:#78a9ff;}
+  .keymsg{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--inv-s1); border:1px solid var(--inv-s1);}
+  .keymsg .km{background:var(--inv); padding:26px 28px;}
+  .keymsg .km .lbl{color:#78a9ff; font-weight:600; font-size:20px; letter-spacing:.16px;}
+  .keymsg .km .desc{color:var(--inv-muted); font-size:16px; line-height:1.5; margin-top:8px;}
+  .endlinks{margin-top:26px; font-family:"IBM Plex Mono",monospace; font-size:15px; color:var(--inv-muted);}
+  .endlinks b{color:#fff; font-weight:500;}
+
+  .note{font-size:14px; color:var(--ink-muted); background:var(--s1);
+    border-left:3px solid var(--blue); padding:12px 16px; margin-top:16px; line-height:1.5; letter-spacing:.16px;}
+  .pill{display:inline-block; border:1px solid var(--hair); padding:4px 10px; font-size:12px;
+    letter-spacing:.32px; color:var(--ink-muted); margin:0 6px 6px 0;}
+  .pill.b{border-color:var(--blue); color:var(--blue); font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- 1 — COVER -->
+<section class="slide cover">
+  <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <h1>AI-Ready Context</h1>
+  <div class="sub">watsonx 위에 올린 설명가능한<br/>Agentic RAG + Knowledge Graph</div>
+  <div class="accent"></div>
+  <p class="desc">질문마다 <b>벡터 · 그래프 · SQL</b> 도구로 자동 라우팅하고,
+    <b>답의 근거를 그대로 보여주는</b> 데모.</p>
+  <div class="who">
+    <b>Kiyeon Jeon</b> &nbsp;·&nbsp; AI Engineer, IBM Client Engineering Korea<br/>
+    <span class="sm">IBM TechXchange Korea 워크숍</span>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span>
+    <span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 2 — AGENDA -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>Agenda</div>
+  <h1 class="title">목차</h1>
+  <div class="body">
+    <ul class="b" style="font-size:20px;">
+      <li><b>배경</b> — 왜 Agentic RAG + Knowledge Graph인가</li>
+      <li><b>아키텍처 &amp; 데이터</b> — 스토어 구성 · 동작 방식 · 문서 적재 · 데모 코퍼스</li>
+      <li><b>데모</b> — 3경로 라우팅 · No-code 즉석 적재 · 설명가능성</li>
+      <li><b>고도화</b> — 각 도구를 한 단계 더 (text-to-SQL · KG · 혼합문서 · Langflow)</li>
+      <li><b>심화</b> — KG를 그래프DB가 아닌 NoSQL(AstraDB)에 담은 법</li>
+      <li><b>운영</b> — 검색·KG 품질 개선 · 배포 · 보안 · 한계</li>
+      <li><b>정리 &amp; Q&amp;A</b></li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 3 — WHY -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>배경</div>
+  <h1 class="title">왜 이걸 만들었나</h1>
+  <div class="body">
+    <ul class="b">
+      <li><b>RAG의 한계</b> — 벡터 검색 하나로는 못 푸는 질문이 많다
+        <ul><li>"총 몇 개 문서가 있나?" → 검색이 아니라 <b>집계(SQL)</b></li>
+            <li>"A 법과 B 기관의 관계는?" → 의미 유사도가 아니라 <b>관계(그래프)</b></li></ul></li>
+      <li><b>신뢰 문제</b> — LLM 답이 맞는지 어떻게 믿나? → <b>근거(grounding)를 보여줘야 한다</b></li>
+      <li><b>운영 현실</b> — 폐쇄망·규제 산업은 SaaS LLM을 그냥 못 쓴다 → <b>watsonx로 거버넌스</b></li>
+    </ul>
+    <p class="kicker-line">→ <b class="blue">"질문에 맞는 도구를 고르고, 근거를 보여주는"</b> 에이전틱 RAG</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 4 — 3 POINTS -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>무엇을 보여주나</div>
+  <h1 class="title">세 가지 포인트</h1>
+  <div class="body">
+    <div class="tiles">
+      <div class="t"><div class="no">01</div><h3>에이전트 라우팅</h3>
+        <p>Langflow의 watsonx granite 에이전트가 <b>vector / graph / sql</b> 도구를 tool-calling으로 선택. 어떤 도구를 썼는지 <b>tool-trace 배지</b>로 표시.</p></div>
+      <div class="t"><div class="no">02</div><h3>설명가능성</h3>
+        <p>답변마다 인용 + 근거 패널. 검색 청크 · KG 서브그래프 · SQL 결과를 <b>펼쳐서</b> 확인.</p></div>
+      <div class="t"><div class="no">03</div><h3>No-code 즉석 적재</h3>
+        <p>UI에서 문서를 텍스트/URL/PDF로 추가 → <b>답이 즉시 바뀌고</b>, 삭제하면 원복. "근거 있으면 정확, 없으면 환각"을 클릭만으로.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 5 — ARCHITECTURE -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>아키텍처 · High-Level</div>
+  <h2 class="title">한 질문, 세 갈래 검색 — watsonx 스택</h2>
+  <div class="body"><div class="imgwrap" style="background:#fff;"><img src="architecture-highlevel.png" alt="architecture" /></div></div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 6 — STACK TABLE -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>구성요소</div>
+  <h2 class="title">스택 — 전부 IBM</h2>
+  <div class="body">
+    <table class="c">
+      <thead><tr><th style="width:26%">역할</th><th>구성요소</th></tr></thead>
+      <tbody>
+        <tr><td>Chat UI</td><td><span class="mono">rag-ui</span> — FastAPI (OpenShift) · tool-trace·근거 패널</td></tr>
+        <tr class="on"><td>오케스트레이션</td><td><b>Langflow</b> 에이전트 (IBM open source, tool-calling) · 파이썬 폴백</td></tr>
+        <tr><td>벡터 검색</td><td><b>OpenSearch</b> (IBM watsonx.data) — kNN + BM25 하이브리드</td></tr>
+        <tr class="on"><td>지식그래프</td><td><b>DataStax AstraDB</b> (IBM watsonx.data) — 엔티티(+emb)/엣지</td></tr>
+        <tr><td>text-to-SQL</td><td><b>IBM watsonx.data</b> Iceberg + Presto — AML 데이터셋</td></tr>
+        <tr class="on"><td>임베딩 + LLM</td><td><b>IBM watsonx.ai</b> granite</td></tr>
+        <tr><td>문서 파싱</td><td><b>Docling</b> (IBM open source)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 7 — DATA STORES -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데이터 스토어</div>
+  <h2 class="title">한 문서, 세 가지 형태</h2>
+  <div class="body">
+    <table class="c">
+      <thead><tr><th style="width:24%">스토어</th><th style="width:40%">무엇을 담나</th><th>어떤 질문에 강한가</th></tr></thead>
+      <tbody>
+        <tr><td>OpenSearch</td><td>청크 + 임베딩(768d) + 원문 텍스트</td><td>"가명정보란 무엇인가" (의미 검색)</td></tr>
+        <tr class="on"><td>AstraDB (KG)</td><td>엔티티(임베딩) · 관계(엣지)</td><td>"접근매체와 감독기관의 관계" (관계)</td></tr>
+        <tr><td>Iceberg / Presto</td><td>문서서 추출한 <b>의무·조항·벌칙 표</b> <span class="muted">(+ 별도 AML 데이터셋)</span></td><td>"법별 의무 건수" · "위험등급 high 거래 총액" (text-to-SQL)</td></tr>
+      </tbody>
+    </table>
+    <ul class="b" style="margin-top:18px;">
+      <li>핵심: <b>같은 문서를 벡터·그래프·SQL 세 형태로</b> 저장 → 질문에 맞춰 골라 읽는다</li>
+      <li>세 스토어 모두 <b>IBM watsonx.data</b> 패밀리 · OpenSearch는 벡터+BM25를 <b>RRF로 융합</b></li>
+      <li>SQL은 <b>문서에서 추출한 의무 테이블</b> + 별도 <b>AML 비즈니스 데이터셋</b> 둘 다 질의</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 8 — HOW IT WORKS -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>동작 방식</div>
+  <h2 class="title">질문이 들어오면</h2>
+  <div class="body">
+    <pre class="code"><span class="c">질문</span>
+ → <span class="k">[라우터]</span>  granite가 도구 선택  {vector, graph, sql}   <span class="c">(+관계형 키워드 백스톱)</span>
+ → vector :  OpenSearch 하이브리드 (kNN + BM25, RRF 융합, k=8)
+   graph  :  AstraDB KG — 엔티티 임베딩 시드 → 1홉 이웃 조회 → 별칭 병합
+   sql    :  text-to-SQL — granite가 Presto SELECT 생성 → 가드 → 실행 (AML)
+ → <span class="k">[합성]</span>   granite가 컨텍스트로 답변 생성 + 인용
+ → <span class="k">[UI]</span>     답변 + tool-trace 배지 + 근거 패널 (생성 SQL 포함)</pre>
+    <ul class="b" style="margin-top:16px;">
+      <li>챗 UI(<span class="mono">/api/chat</span>)는 오케스트레이션을 <b>Langflow 에이전트에 위임</b> — 오류 시 <b>파이썬 에이전트로 폴백</b></li>
+      <li>라우팅·검색·합성·임베딩은 전부 <b>watsonx.ai granite</b> · 답변 언어는 질문 언어를 따름</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 9 — INGEST -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>문서 적재</div>
+  <h2 class="title">한 번에 다섯 저장소</h2>
+  <div class="body">
+    <pre class="code">ingest_source(문서)   <span class="c">doc_id = sha1(source)</span>
+  ├─ OpenSearch          : 청크 + granite 임베딩(768d)       <span class="c">← vector</span>
+  ├─ AstraDB kg          : granite 추출 엔티티(+emb)/엣지     <span class="c">← graph</span>
+  ├─ Iceberg obligations : granite 추출 의무·조항·벌칙 표     <span class="c">← sql</span>
+  ├─ AstraDB doc_registry: 제목·소스·해시·카운트             <span class="c">← 추적/증분</span>
+  └─ Iceberg corpus      : 문서 인벤토리 1행                 <span class="c">← 추적</span></pre>
+    <ul class="b" style="margin-top:16px;">
+      <li><b>멱등 upsert</b>(doc_id 기준) + <b>content-hash 스킵</b> → 재적재해도 중복 없음</li>
+      <li><b>CronJob rag-reindex</b>(30분): 등록 소스 재적재, 바뀐 것만 · 파싱은 <b>docling-serve</b>(텍스트/URL/PDF)</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 10 — CORPUS -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 코퍼스</div>
+  <h2 class="title">한글 금융·컴플라이언스 — md · PDF · URL 혼합</h2>
+  <div class="body">
+    <ul class="b">
+      <li><b>md (4)</b> — 개인정보 보호법 · 마이데이터 · 전자금융거래법 · 전자금융감독규정</li>
+      <li><b>PDF (2)</b> — 신용정보법 · 특정금융정보법 <span class="muted">(docling 변환 적재)</span></li>
+      <li><b>URL (2)</b> — Docling README · Langflow README <span class="muted">(docling fetch)</span></li>
+    </ul>
+    <div class="note">
+      <b>왜 금융 법령?</b> 법령 간 교차참조가 많아 지식그래프가 "의미를 갖는" 도메인. md/PDF/URL 혼합으로 <b>문서 처리 다양성</b>과 한글/영문 다국어를 동시 시연하고, 별도 <b>AML 데이터셋</b>(<span class="mono">iceberg_data.aml</span>)으로 text-to-SQL을 보여준다.
+    </div>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 10b — DATA DETAIL -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데이터 · 상세</div>
+  <h2 class="title">어떤 데이터를 넣었나</h2>
+  <div class="body">
+    <table class="c" style="font-size:14px;">
+      <thead><tr><th style="width:34%">문서</th><th style="width:13%">형식</th><th>출처 · 적재 경로</th></tr></thead>
+      <tbody>
+        <tr><td>개인정보 보호법 (PIPA)</td><td>md</td><td><span class="mono">corpus/01_개인정보보호법.md</span></td></tr>
+        <tr><td>마이데이터 (본인신용정보관리업)</td><td>md</td><td><span class="mono">corpus/03_마이데이터.md</span></td></tr>
+        <tr><td>전자금융거래법</td><td>md</td><td><span class="mono">corpus/04_전자금융거래법.md</span></td></tr>
+        <tr><td>전자금융감독규정</td><td>md</td><td><span class="mono">corpus/05_전자금융감독규정.md</span></td></tr>
+        <tr class="on"><td>신용정보법</td><td><b>PDF</b></td><td><span class="mono">corpus_pdf/02_신용정보법.pdf</span> <span class="muted">· docling 변환</span></td></tr>
+        <tr class="on"><td>특정금융정보법 (AML/CFT)</td><td><b>PDF</b></td><td><span class="mono">corpus_pdf/06_특정금융정보법.pdf</span> <span class="muted">· docling 변환</span></td></tr>
+        <tr><td>Docling README</td><td><b>URL</b></td><td>GitHub raw <span class="muted">· docling fetch</span></td></tr>
+        <tr><td>Langflow README</td><td><b>URL</b></td><td>GitHub raw <span class="muted">· docling fetch</span></td></tr>
+      </tbody>
+    </table>
+    <div class="note" style="margin-top:14px;">
+      <b>문서에서 추출되는 정형 테이블</b> — <span class="mono">iceberg_data.rag.obligations</span>(law·party·obligation·article·penalty):
+      적재 때 granite가 각 법령에서 <b>의무·조항·벌칙</b>을 뽑아 Iceberg에 적재 → text-to-SQL이 질의("법별 의무 건수" 등).
+      <br/><b>+ 별도 AML 데이터셋</b> (사전 시드, 문서와 무관) — <span class="mono">iceberg_data.aml</span> ·
+      <span class="mono">customers</span>(60)·<span class="mono">accounts</span>(~90)·<span class="mono">transactions</span>(~2,000)·<span class="mono">str_reports</span>(~13),
+      합성·고정시드. 코퍼스(특정금융정보법/STR)와 <b>같은 도메인</b>이라 vector·graph·sql이 한 주제를 교차 참조한다.
+    </div>
+    <p class="flowcap"><b>md 4 · PDF 2 · URL 2</b> = 문서 8건(한글 금융·컴플라이언스 + 영문 README) · 문서서 추출한 의무 테이블 + 사전 시드 AML 데이터셋.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 11 — DEMO 1 ROUTES -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 1</div>
+  <h2 class="title">세 가지 검색 경로</h2>
+  <div class="body">
+    <table class="c">
+      <thead><tr><th style="width:14%">경로</th><th style="width:46%">예시 질문</th><th>보여줄 것</th></tr></thead>
+      <tbody>
+        <tr><td>vector</td><td>"가명정보란 무엇이고 동의 없이 쓸 수 있는 목적은?"</td><td>인용칩 + 검색 청크(유사도 바)</td></tr>
+        <tr class="on"><td>graph</td><td>"접근매체와 감독기관의 관계를 지식그래프로 보여줘"</td><td>엔티티 칩 + 엣지 트리플</td></tr>
+        <tr><td>sql</td><td>"위험등급 high 고객의 플래그 거래 총액을 상대국가별로?"</td><td>생성 SQL 코드블록 + 결과 표</td></tr>
+        <tr class="on"><td>hybrid</td><td>"자금세탁 의심거래는 어디 보고하고, VASP 의무는?"</td><td>vector+graph 배지 동시 점등</td></tr>
+      </tbody>
+    </table>
+    <p class="flowcap">→ 각 답변에서 <b>tool-trace 배지</b>와 <b>근거 패널</b>을 펼쳐 보여준다.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 12 — vector screenshot -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 1a · vector</div>
+  <h2 class="title">의미 검색 + 근거 청크</h2>
+  <div class="body"><div class="imgwrap"><img src="img/02-vector.png" alt="vector" /></div></div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 13 — graph screenshot -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 1b · graph</div>
+  <h2 class="title">관계 → 지식그래프 서브그래프</h2>
+  <div class="body"><div class="imgwrap"><img src="img/03-graph.png" alt="graph" /></div></div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 14 — sql screenshot -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 1c · sql (text-to-SQL)</div>
+  <h2 class="title">자연어 → 생성 SQL + 결과</h2>
+  <div class="body"><div class="imgwrap"><img src="img/04-sql.png" alt="sql" /></div></div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 15 — DEMO 2 ingest -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 2 ★ · 하이라이트</div>
+  <h2 class="title">No-code 즉석 적재 → 답 변화 → 원복</h2>
+  <div class="body">
+    <ul class="b">
+      <li><b>적재 전 질문</b> — "CSAP는 어느 기관이 평가하나?" → <b style="color:var(--err)">환각</b>(코퍼스에 없어 엉뚱한 답)</li>
+      <li><b>⚙ 코퍼스 드로어</b> → 텍스트 탭 → 제목+본문 붙여넣기 → <b>추가 적재</b> (목록 8 → 9)</li>
+      <li><b>같은 질문 재질의</b> → <b style="color:var(--ok)">정확</b> + 새 문서 인용 (KISA·한국인터넷진흥원)</li>
+      <li><b>🗑 삭제</b> → 같은 질문 → 다시 <b style="color:var(--err)">환각으로 원복</b></li>
+    </ul>
+    <p class="flowcap">입력 3종: <b>텍스트</b>(주력) · <b>URL</b>(docling fetch) · <b>파일</b>(PDF/DOCX). 한 번의 적재로 벡터·그래프·SQL(의무표)·추적까지 동시 반영.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 16 — corpus drawer screenshot -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>데모 2 · 코퍼스 드로어</div>
+  <h2 class="title">코드 한 줄 없이 코퍼스 변경</h2>
+  <div class="body"><div class="imgwrap"><img src="img/06-corpus-drawer.png" alt="corpus drawer" /></div></div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 17 — explainability -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>설명가능성</div>
+  <h2 class="title">근거를 어떻게 보여주나</h2>
+  <div class="body">
+    <ul class="b">
+      <li><b>tool-trace 배지</b> — 이 답에 vector / graph / sql 중 무엇을 썼는지</li>
+      <li><b>인용 칩</b> — 답변 속 주장 ↔ 출처 문서 연결</li>
+      <li><b>근거 패널</b>(펼치기) — Retrieved passages(유사도) · Knowledge subgraph(엔티티·엣지) · Generated SQL + 결과</li>
+      <li><b>출처 링크</b> — URL 문서는 원문, 직접작성 md는 <span class="mono">/corpus/*.md</span>로 열림</li>
+    </ul>
+    <div class="note">신뢰의 핵심은 "왜 이렇게 답했는지"를 보여주는 것. 배지로 도구를, 패널로 실제 근거를, 출처는 클릭하면 원문이 열린다 — <b>블랙박스가 아니다.</b></div>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 18 — upgrade overview -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>고도화</div>
+  <h2 class="title">각 도구를 한 단계 더</h2>
+  <div class="body">
+    <table class="c" style="font-size:14px;">
+      <thead><tr><th style="width:16%">도구</th><th style="width:30%">Before (얕음)</th><th>After (이번 고도화)</th></tr></thead>
+      <tbody>
+        <tr><td>SQL</td><td>corpus 메타데이터 고정 쿼리</td><td><b>text-to-SQL</b> — AML 데이터셋 <b>+ 문서서 추출한 의무 테이블</b>에 granite가 SELECT 생성·실행 (SELECT-only 가드 + self-correction), 생성 SQL 노출</td></tr>
+        <tr class="on"><td>KG</td><td>전체 로드 + 문자열 매칭</td><td><b>엔티티 임베딩 시드 + 엔티티 해소 + 타입 온톨로지</b> → 1홉 서브그래프</td></tr>
+        <tr><td>문서</td><td>md 6종</td><td><b>md + PDF + URL 혼합</b> (docling 변환)</td></tr>
+        <tr class="on"><td>오케스트레이션</td><td>파이썬 단일패스 라우터</td><td><b>Langflow 에이전트가 메인</b> (tool-calling, 파이썬은 폴백)</td></tr>
+      </tbody>
+    </table>
+    <p class="flowcap">공통: 라우터에 <b>관계형 키워드 백스톱</b> · 원칙: 데모는 명료·안정 / <b>프로덕션 경로는 정직하게</b>(README 대조표).</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 19 — upgrade text2sql -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>고도화 ★ · text-to-SQL</div>
+  <h2 class="title">실제 비즈니스 데이터에 자연어 질의</h2>
+  <div class="body">
+    <ul class="b" style="margin-bottom:14px;">
+      <li><b>데이터셋 2종</b>: <span class="mono">aml.*</span>(고객·거래·STR, 사전 시드) + <span class="mono">rag.obligations</span>(문서서 추출한 의무·조항·벌칙) — granite가 질문에 맞는 쪽을 선택</li>
+    </ul>
+    <pre class="code">질문 → granite가 Presto SELECT 생성 <span class="c">(스키마카드 + few-shot)</span>
+     → 가드 <span class="o">(SELECT-only · 자동 LIMIT · DDL 차단)</span>
+     → 실행, 에러 시 <span class="k">self-correction 1회</span>
+     → 결과 + 생성 SQL 을 패널에 노출</pre>
+    <p class="flowcap">예: <i>"위험등급 high 고객의 플래그 거래 총액을 상대국가별로?"</i> → 3-테이블 조인 SQL 자동 생성·실행.
+      프로덕션: 시맨틱 레이어/dbt · 행수준 보안 · 쿼리 검증.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 20 — upgrade langflow -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>고도화 · Langflow</div>
+  <h2 class="title">오케스트레이션을 눈으로</h2>
+  <div class="body">
+    <pre class="code">ChatInput ─► <span class="k">Agent (IBM watsonx.ai)</span> ─► ChatOutput
+                ▲ tools
+   search_documents(vector) · lookup_relationships(graph) · query_business_data(SQL)</pre>
+    <ul class="b" style="margin-top:16px;">
+      <li>rag-ui가 도구를 <b>HTTP 엔드포인트</b>로 노출 (<span class="mono">/api/tool/{vector,graph,sql}</span>, 토큰 게이트)</li>
+      <li>챗 UI → Langflow 실행 → 응답의 tool 출력으로 <b>근거 패널 그대로 복원</b></li>
+      <li><b>대화별 session_id</b>(브라우저 uuid)로 <b>멀티턴</b> + 사용자 격리 · "새 대화" 리셋 · 실패 시 파이썬 폴백</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 21 — KG schema -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>심화 ① · KG 스키마</div>
+  <h2 class="title">그래프DB가 아닌 NoSQL에 담기</h2>
+  <div class="body">
+    <p class="lead" style="margin-bottom:12px;">코퍼스가 작고(8문서·~100노드/108엣지) 질의는 <b>1홉 서브그래프</b>뿐 → 멀티홉 엔진 불필요. 단일 컬렉션 <span class="mono">kg</span>에 <span class="mono">kind</span>로 노드/엣지 구분.</p>
+    <pre class="code">{ <span class="k">"kind"</span>:<span class="s">"entity"</span>, "name":<span class="s">"마이데이터"</span>, "type":<span class="s">"service_provider"</span>,
+  "norm":<span class="s">"마이데이터"</span>, "emb":[<span class="c">…768d…</span>], "doc_id":"…" }
+
+{ <span class="k">"kind"</span>:<span class="s">"edge"</span>, "src":<span class="s">"마이데이터"</span>, "rel":<span class="o">"based_on"</span>, "dst":<span class="s">"신용정보법"</span>,
+  "src_norm":<span class="s">"마이데이터"</span>, "dst_norm":<span class="s">"신용정보법"</span> }   <span class="c">// 정규화 트리플</span></pre>
+    <p class="flowcap"><span class="mono">emb</span> = 768d 임베딩(시드·해소) · <span class="mono">*_norm</span> = 정규화 키(별칭 병합) · <span class="mono">rel</span> 통제어휘 14종 · <span class="mono">type</span> 온톨로지 11종.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 22 — KG behavior -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>심화 ② · KG 동작</div>
+  <h2 class="title">벡터 시드 + 1홉 이웃 조회</h2>
+  <div class="body">
+    <pre class="code"><span class="c"># 적재(write)</span> — 문서 1건 → 같은 doc_id로 삭제 후 재삽입
+granite {entities(type), edges} 추출 → 임베딩(emb) + 엔티티 해소(norm + 코사인≥0.90)
+  → astra_delete_all(doc_id) → insertMany   <span class="c"># 멱등</span>
+
+<span class="c"># 질의(read)</span> — 벡터 시드 + 1홉
+질문 임베딩 ↔ 엔티티 emb 코사인 → 의미적 시드 선정
+  → 1홉 엣지  <span class="k">find({kind:edge, $or:[src_norm∈S, dst_norm∈S]})</span>
+  → 점수=질문언급(+2)+시드(+1) → 별칭 병합·자기루프 제거 → 칩 + 트리플</pre>
+    <p class="flowcap">⚠ 이 AstraDB는 서버사이드 벡터 ANN 미지원(SAI 'aa') → KG가 작아 <b>코사인 앱-사이드</b>. 스케일·트래버설은 CQL 파티션 / 그래프DB.</p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 23 — quality -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>운영 · 품질 개선</div>
+  <h2 class="title">PoC를 쓸 만하게 만든 디테일</h2>
+  <div class="body">
+    <ul class="b">
+      <li><b>하이브리드 검색</b> — 벡터(의미) + BM25(정확매칭) RRF 융합 → 약어·법령명(STR·VASP·CISO)에 강함</li>
+      <li><b>cjk 분석기</b> — 한글 bigram 토큰화 → 한글 BM25 recall 개선 (nori 미설치 우회)</li>
+      <li><b>KG 정규화·해소</b> — 정규화 + 임베딩 코사인 별칭 병합 · 타입 온톨로지 · 관계 snake_case</li>
+      <li><b>text-to-SQL 가드</b> — read-only(SELECT-only + LIMIT) · 실행 에러 self-correction 1회</li>
+      <li><b>라우터 백스톱</b> — 관계형 키워드로 graph 경로 보강 (granite 과소선택 보완)</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 24 — deploy -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>운영 · 배포</div>
+  <h2 class="title">이미지 빌드 없이</h2>
+  <div class="body">
+    <ul class="b" style="margin-bottom:14px;">
+      <li><b>내부 레지스트리 Removed</b> 환경 → 이미지 빌드 불가</li>
+      <li>해법: <b>ConfigMap + 런타임 pip-install</b> — 코드/정적파일 마운트, <span class="mono">ubi9/python-312</span>가 기동 시 설치·실행</li>
+      <li>단일 컨테이너 FastAPI · 자격증명은 <span class="mono">rag-secrets</span> · 그래프 질의 30s 초과 → 라우트 타임아웃 120s</li>
+    </ul>
+    <pre class="code">oc -n genai-apps create configmap rag-code --from-file=*.py --dry-run=client -o yaml | oc apply -f -
+oc -n genai-apps rollout restart deploy/rag-ui   <span class="c"># 이미지 빌드 없음</span></pre>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 25 — security -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>운영 · 보안</div>
+  <h2 class="title">공유 비밀번호 게이트</h2>
+  <div class="body">
+    <div class="split right38">
+      <div class="col">
+        <ul class="b">
+          <li>채팅 UI는 <b>공유 비밀번호 로그인</b>으로 보호 (서명된 세션 쿠키, HMAC)</li>
+          <li><span class="mono">rag-secrets</span>의 <span class="mono">APP_PASSWORD</span> 키로 설정 — 키 없으면 인증 없이 열림(하위호환)</li>
+          <li>미인증: 페이지 → <span class="mono">/login</span> 리다이렉트, API → <span class="mono">401</span></li>
+          <li>⚠ 적재/삭제는 로그인 후 누구나 가능(데모) → 운영엔 <b>사용자별 인증 + 트랜잭션</b> 필요</li>
+        </ul>
+      </div>
+      <div class="col"><div class="imgwrap"><img src="img/05-login.png" alt="login" /></div></div>
+    </div>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 26 — limits -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>운영 · 한계</div>
+  <h2 class="title">알아둘 한계 (데모 수용 범위)</h2>
+  <div class="body">
+    <ul class="b">
+      <li><b>무인증 쓰기</b> — 적재/삭제 공개. 운영 시 인증·outbox 트랜잭션 필요</li>
+      <li><b>라우터 비결정성</b> — granite가 graph 과소선택 → 키워드 백스톱 보강(완전 결정적은 아님)</li>
+      <li><b>그래프 순회 아님</b> — 1홉 서브그래프 수준. AstraDB 비벡터 NoSQL → 벡터 시드는 앱-사이드 코사인</li>
+      <li><b>text-to-SQL 범위</b> — read-only 가드; 복잡 조인은 few-shot로 유도(완전 일반화 X)</li>
+      <li><b>docling-graph 미사용</b> — KG는 granite LLM 추출. docling-graph는 스캔PDF/복잡표용 옵션</li>
+    </ul>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 27 — key message (inverse) -->
+<section class="slide inv">
+  <div class="eyebrow"><span class="rule"></span>정리</div>
+  <h1 class="title">핵심 메시지</h1>
+  <div class="body">
+    <div class="keymsg">
+      <div class="km"><div class="lbl">Agentic RAG</div><div class="desc">검색 하나가 아니라, 질문에 <b>맞는 도구를 고르는</b> 것</div></div>
+      <div class="km"><div class="lbl">Explainability</div><div class="desc">답뿐 아니라 <b>근거를 보여줘야</b> 신뢰가 생긴다</div></div>
+      <div class="km"><div class="lbl">AI-Ready Context</div><div class="desc">같은 문서를 <b>벡터·그래프·SQL</b> 세 형태로 준비</div></div>
+      <div class="km"><div class="lbl">watsonx + OpenShift</div><div class="desc">규제 산업에서도 <b>거버넌스 가능한</b> 스택</div></div>
+    </div>
+    <div class="endlinks">데모 <b>https://rag-ui-genai-apps.apps.&lt;CLUSTER_DOMAIN&gt;</b><br/>코드 <b>github.com/kiyeonjeon21/techxchange-ai-ready-context</b></div>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+<!-- 28 — appendix / Q&A -->
+<section class="slide">
+  <div class="eyebrow"><span class="rule"></span>Q&amp;A · 부록</div>
+  <h2 class="title">기술 노트</h2>
+  <div class="body">
+    <ul class="b" style="font-size:16px;">
+      <li>watsonx.data Presto는 <b>PrestoDB</b> (<span class="mono">presto-python-client</span>, trino 아님)</li>
+      <li>OpenSearch: faiss 없음 → <b>lucene kNN</b>, 한글 BM25는 <b>cjk 분석기</b></li>
+      <li>KG: granite 추출 + 임베딩(<span class="mono">emb</span>) 엔티티 해소 + 타입 온톨로지; 1홉은 <span class="mono">$or/$in</span> 서버 필터</li>
+      <li>text-to-SQL: 스키마카드+few-shot, SELECT-only 가드, self-correction (<span class="mono">iceberg_data.aml</span>)</li>
+      <li>모델: granite (챗 엔진) + granite-embedding-278m (768d) · Langflow는 <b>granite-4-h-small</b></li>
+      <li>파싱: docling-serve <span class="mono">/v1/convert/source</span>(URL) · <span class="mono">/v1/convert/file</span>(PDF)</li>
+    </ul>
+    <p class="flowcap">상세: <span class="mono">docs/architecture.pdf</span> · <span class="mono">docs/DEMO.md</span> · <span class="mono">NOTE.md</span></p>
+  </div>
+  <div class="foot"><span>AI-Ready Context · watsonx</span><span class="right"><span class="n"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+</section>
+
+</body>
+</html>

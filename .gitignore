@@ -52,3 +52,7 @@ package-lock.json
 .vscode/
 *.log
 /tmp/
+
+# Playwright demo artifacts (transient)
+demo-*.png
+.playwright-mcp/

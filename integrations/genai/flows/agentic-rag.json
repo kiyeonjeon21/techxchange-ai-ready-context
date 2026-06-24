@@ -370,20 +370,6 @@
               {
                 "allows_loop": false,
                 "cache": true,
-                "display_name": "Model Response",
-                "group_outputs": false,
-                "method": "text_response",
-                "name": "text_output",
-                "selected": "Message",
-                "tool_mode": true,
-                "types": [
-                  "Message"
-                ],
-                "value": "__UNDEFINED__"
-              },
-              {
-                "allows_loop": false,
-                "cache": true,
                 "display_name": "Language Model",
                 "group_outputs": false,
                 "method": "build_model",
@@ -1369,7 +1355,7 @@
                 "trace_as_metadata": true,
                 "track_in_telemetry": false,
                 "type": "str",
-                "value": "You are an agentic RAG assistant over the watsonx stack. You have three tools: RAG Vector Search (document passages), RAG Knowledge Graph (entity relationships), and RAG text-to-SQL (the AML business dataset). Choose the tool(s) that fit the question — use vector for definitions/concepts, the knowledge graph for relationship/structure questions, and text-to-SQL for counts/sums/amounts over customers, transactions, or suspicious-transaction reports. You may call multiple tools. Ground your answer ONLY in tool results and cite what you used. Answer in the user's language (Korean question -> Korean answer)."
+                "value": "You are an agentic RAG assistant over the watsonx stack. Answer ONLY from your tools — never from prior knowledge. Tools:\n- search_documents (vector): definitions / concepts / 'what does the document say' questions. Pass the user's question VERBATIM as the query — do not paraphrase, shorten, or translate it.\n- lookup_relationships (knowledge graph): relationship/structure questions — who regulates / supervises / reports to / applies to whom, an entity's links, or questions mentioning 관계·관련·감독·규제·적용 대상·보고 대상. For these you MUST call lookup_relationships.\n- query_business_data (text-to-SQL): counts / sums / amounts / risk ratings / flagged transactions / countries over the AML dataset (customers, accounts, transactions, suspicious-transaction reports).\nRules:\n1) Always call at least one tool before answering; you may call several.\n2) Treat the returned passages/rows as the ONLY source of truth. If they state a fact (e.g., which organization evaluates or supervises something), use EXACTLY that fact — even if it contradicts what you think you already know.\n3) NEVER introduce names, organizations, numbers, or facts that do not appear in the tool results.\n4) If the tool results do not contain the answer, say the corpus does not cover it — do not guess.\nAnswer in the user's language (Korean question -> Korean answer)."
               },
               "tools": {
                 "_input_type": "HandleInput",
@@ -2085,8 +2071,8 @@
         "id": "xy-edge__ChatInput-1{œdataTypeœ:œChatInputœ,œidœ:œChatInput-1œ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}-Agent-1{œfieldNameœ:œinput_valueœ,œidœ:œAgent-1œ,œinputTypesœ:[œMessageœ],œtypeœ:œstrœ}",
         "source": "ChatInput-1",
         "target": "Agent-1",
-        "sourceHandle": "{œdataTypeœ: œChatInputœ, œidœ: œChatInput-1œ, œnameœ: œmessageœ, œoutput_typesœ: [œMessageœ]}",
-        "targetHandle": "{œfieldNameœ: œinput_valueœ, œidœ: œAgent-1œ, œinputTypesœ: [œMessageœ], œtypeœ: œstrœ}",
+        "sourceHandle": "{œdataTypeœ:œChatInputœ,œidœ:œChatInput-1œ,œnameœ:œmessageœ,œoutput_typesœ:[œMessageœ]}",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œAgent-1œ,œinputTypesœ:[œMessageœ],œtypeœ:œstrœ}",
         "animated": false,
         "className": ""
       },
@@ -2106,14 +2092,14 @@
             "inputTypes": [
               "LanguageModel"
             ],
-            "type": "other"
+            "type": "model"
           }
         },
-        "id": "xy-edge__IBMwatsonxModel-1{œdataTypeœ:œIBMwatsonxModelœ,œidœ:œIBMwatsonxModel-1œ,œnameœ:œmodel_outputœ,œoutput_typesœ:[œLanguageModelœ]}-Agent-1{œfieldNameœ:œmodelœ,œidœ:œAgent-1œ,œinputTypesœ:[œLanguageModelœ],œtypeœ:œotherœ}",
+        "id": "xy-edge__IBMwatsonxModel-1{œdataTypeœ:œIBMwatsonxModelœ,œidœ:œIBMwatsonxModel-1œ,œnameœ:œmodel_outputœ,œoutput_typesœ:[œLanguageModelœ]}-Agent-1{œfieldNameœ:œmodelœ,œidœ:œAgent-1œ,œinputTypesœ:[œLanguageModelœ],œtypeœ:œmodelœ}",
         "source": "IBMwatsonxModel-1",
         "target": "Agent-1",
-        "sourceHandle": "{œdataTypeœ: œIBMwatsonxModelœ, œidœ: œIBMwatsonxModel-1œ, œnameœ: œmodel_outputœ, œoutput_typesœ: [œLanguageModelœ]}",
-        "targetHandle": "{œfieldNameœ: œmodelœ, œidœ: œAgent-1œ, œinputTypesœ: [œLanguageModelœ], œtypeœ: œotherœ}",
+        "sourceHandle": "{œdataTypeœ:œIBMwatsonxModelœ,œidœ:œIBMwatsonxModel-1œ,œnameœ:œmodel_outputœ,œoutput_typesœ:[œLanguageModelœ]}",
+        "targetHandle": "{œfieldNameœ:œmodelœ,œidœ:œAgent-1œ,œinputTypesœ:[œLanguageModelœ],œtypeœ:œmodelœ}",
         "animated": false,
         "className": ""
       },
@@ -2135,14 +2121,14 @@
               "DataFrame",
               "Message"
             ],
-            "type": "str"
+            "type": "other"
           }
         },
-        "id": "xy-edge__Agent-1{œdataTypeœ:œAgentœ,œidœ:œAgent-1œ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-1{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-1œ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œstrœ}",
+        "id": "xy-edge__Agent-1{œdataTypeœ:œAgentœ,œidœ:œAgent-1œ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-1{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-1œ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}",
         "source": "Agent-1",
         "target": "ChatOutput-1",
-        "sourceHandle": "{œdataTypeœ: œAgentœ, œidœ: œAgent-1œ, œnameœ: œresponseœ, œoutput_typesœ: [œMessageœ]}",
-        "targetHandle": "{œfieldNameœ: œinput_valueœ, œidœ: œChatOutput-1œ, œinputTypesœ: [œDataœ, œDataFrameœ, œMessageœ], œtypeœ: œstrœ}",
+        "sourceHandle": "{œdataTypeœ:œAgentœ,œidœ:œAgent-1œ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-1œ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}",
         "animated": false,
         "className": ""
       },
@@ -2168,8 +2154,8 @@
         "id": "xy-edge__RagVectorTool-0{œdataTypeœ:œRagVectorToolœ,œidœ:œRagVectorTool-0œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}-Agent-1{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "source": "RagVectorTool-0",
         "target": "Agent-1",
-        "sourceHandle": "{œdataTypeœ: œRagVectorToolœ, œidœ: œRagVectorTool-0œ, œnameœ: œcomponent_as_toolœ, œoutput_typesœ: [œToolœ]}",
-        "targetHandle": "{œfieldNameœ: œtoolsœ, œidœ: œAgent-1œ, œinputTypesœ: [œToolœ], œtypeœ: œotherœ}",
+        "sourceHandle": "{œdataTypeœ:œRagVectorToolœ,œidœ:œRagVectorTool-0œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}",
+        "targetHandle": "{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "animated": false,
         "className": ""
       },
@@ -2195,8 +2181,8 @@
         "id": "xy-edge__RagGraphTool-1{œdataTypeœ:œRagGraphToolœ,œidœ:œRagGraphTool-1œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}-Agent-1{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "source": "RagGraphTool-1",
         "target": "Agent-1",
-        "sourceHandle": "{œdataTypeœ: œRagGraphToolœ, œidœ: œRagGraphTool-1œ, œnameœ: œcomponent_as_toolœ, œoutput_typesœ: [œToolœ]}",
-        "targetHandle": "{œfieldNameœ: œtoolsœ, œidœ: œAgent-1œ, œinputTypesœ: [œToolœ], œtypeœ: œotherœ}",
+        "sourceHandle": "{œdataTypeœ:œRagGraphToolœ,œidœ:œRagGraphTool-1œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}",
+        "targetHandle": "{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "animated": false,
         "className": ""
       },
@@ -2222,8 +2208,8 @@
         "id": "xy-edge__RagSqlTool-2{œdataTypeœ:œRagSqlToolœ,œidœ:œRagSqlTool-2œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}-Agent-1{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "source": "RagSqlTool-2",
         "target": "Agent-1",
-        "sourceHandle": "{œdataTypeœ: œRagSqlToolœ, œidœ: œRagSqlTool-2œ, œnameœ: œcomponent_as_toolœ, œoutput_typesœ: [œToolœ]}",
-        "targetHandle": "{œfieldNameœ: œtoolsœ, œidœ: œAgent-1œ, œinputTypesœ: [œToolœ], œtypeœ: œotherœ}",
+        "sourceHandle": "{œdataTypeœ:œRagSqlToolœ,œidœ:œRagSqlTool-2œ,œnameœ:œcomponent_as_toolœ,œoutput_typesœ:[œToolœ]}",
+        "targetHandle": "{œfieldNameœ:œtoolsœ,œidœ:œAgent-1œ,œinputTypesœ:[œToolœ],œtypeœ:œotherœ}",
         "animated": false,
         "className": ""
       }

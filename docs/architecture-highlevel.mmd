@@ -4,41 +4,51 @@ title: Agentic RAG + Knowledge Graph — High-Level
 flowchart LR
   user(["User"])
 
-  subgraph APP["Chat UI + Agent — rag-ui (FastAPI, OpenShift)"]
-    agent{"LLM Agent<br/>route · retrieve · synthesize"}
+  subgraph ING["Ingestion"]
+    direction TB
+    docs[/"Documents<br/>text · URL · PDF"/]
+    docling["Docling<br/>IBM open source<br/>document parsing"]
+    docs --> docling
   end
 
-  subgraph RET["Retrieval"]
+  subgraph APP["Chat UI — rag-ui (FastAPI, OpenShift)"]
+    ui["Chat UI + API<br/>/api/chat → Langflow<br/>(fallback: in-process Python agent)"]
+  end
+
+  lf{"Langflow Agent<br/>IBM open source<br/>orchestration · tool-calling<br/>(watsonx granite)"}
+
+  subgraph RET["Retrieval tools"]
     vec["Vector search<br/>(semantic)"]
     kg["Graph lookup<br/>(relationships)"]
-    sql["SQL query<br/>(inventory)"]
+    sql["SQL query<br/>(text-to-SQL)"]
   end
 
-  subgraph DATA["Data stores"]
-    os[("OpenSearch<br/>vectors + BM25")]
-    astra[("AstraDB<br/>knowledge graph")]
-    ice[("watsonx.data<br/>Iceberg / Presto")]
+  subgraph WXD["IBM watsonx.data — data store + engine"]
+    os[("OpenSearch<br/>vector + BM25")]
+    ice[("Iceberg + Presto<br/>lakehouse SQL")]
+    astra[("DataStax AstraDB<br/>knowledge graph (NoSQL)")]
   end
 
-  wx["watsonx.ai<br/>granite — embed + LLM"]
-  docs[/"Documents<br/>text · URL · PDF"/]
+  wx["IBM watsonx.ai<br/>granite — embed + LLM"]
 
   %% ingest (write)
-  docs -. ingest .-> agent
+  docling -. ingest .-> ui
 
-  %% query (read)
-  user --> agent
-  agent --> vec --> os
-  agent --> kg --> astra
-  agent --> sql --> ice
-  vec & kg & sql --> agent
-  agent <-. embed + generate .-> wx
-  agent --> ans(["Answer<br/>+ citations + evidence"])
-  ans --> user
+  %% query (read) — Chat UI delegates orchestration to the Langflow agent
+  user --> ui --> lf
+  lf --> vec --> os
+  lf --> kg --> astra
+  lf --> sql --> ice
+  vec & kg & sql --> lf
+  lf <-. embed + generate .-> wx
+  lf --> ans(["Answer<br/>+ citations + evidence"]) --> user
 
-  classDef saas fill:#e8f0fe,stroke:#4285f4,color:#111
+  classDef ibm fill:#dbeafe,stroke:#0f62fe,color:#111
+  classDef ibmoss fill:#d7f5ee,stroke:#0a9396,color:#111
   classDef store fill:#fff4e5,stroke:#f5a623,color:#111
   classDef app fill:#ede7ff,stroke:#7c5cff,color:#111
-  class wx saas
-  class os,astra,ice store
-  class agent app
+  class wx ibm
+  class docling,lf ibmoss
+  class os,ice,astra store
+  class ui app
+  style WXD fill:#eef4ff,stroke:#0f62fe,stroke-width:2px

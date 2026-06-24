@@ -1,9 +1,24 @@
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
 const thread = $("#thread"), welcome = $("#welcome"), form = $("#composer"), input = $("#q"), sendBtn = $("#send");
+const welcomeHTML = welcome ? welcome.outerHTML : "";   // captured for "새 대화" restore
+// stable conversation id (per browser/tab) -> Langflow multi-turn memory; survives refresh
+let sessionId = sessionStorage.getItem("ragui_sid") || crypto.randomUUID();
+sessionStorage.setItem("ragui_sid", sessionId);
 
 marked.setOptions({ breaks: true });
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// CJK markdown fix: CommonMark won't close **bold**/*italic* when the closing delimiter follows
+// punctuation and precedes a word char (right-flanking rule) — so Korean like "**…정보)**란" renders
+// literally. Insert an invisible zero-width space before such a delimiter to make it a valid closer.
+// Code spans/blocks are left untouched.
+function fixCJKEmphasis(md) {
+  return String(md ?? "").split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((seg, i) => i % 2 ? seg
+      : seg.replace(/([^\w\s가-힣*])(\*{1,2})(?=[\w가-힣])/g, "$1​$2"))
+    .join("");
+}
 
 const SUGGESTIONS = [
   "가명정보란 무엇이고 동의 없이 쓸 수 있는 목적은?",
@@ -27,7 +42,7 @@ renderSuggestions();
 function scrollDown() { window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); }
 
 function addUser(text) {
-  welcome?.remove();
+  $("#welcome")?.remove();
   const el = document.createElement("div");
   el.className = "msg user";
   el.innerHTML = `<div class="bubble">${esc(text)}</div>`;
@@ -123,7 +138,7 @@ function renderAnswer(el, data) {
   const ctx = data.context || {};
   const panels = chunkPanel(ctx.chunks) + kgPanel(ctx.kg) + sqlPanel(ctx.sql);
   el.innerHTML = `<div class="answer-card">
-    <div class="ans">${marked.parse(data.answer || "_No answer._")}</div>
+    <div class="ans">${marked.parse(fixCJKEmphasis(data.answer || "_No answer._"))}</div>
     ${citeChips(data.citations)}
     ${routeBadges(data.route || {})}
     ${panels ? `<div class="ctx">${panels}</div>` : ""}
@@ -140,7 +155,7 @@ async function submit() {
   try {
     const res = await fetch("/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q }),
+      body: JSON.stringify({ question: q, session_id: sessionId }),
     });
     const data = await res.json();
     renderAnswer(slot, data);
@@ -153,6 +168,16 @@ async function submit() {
 
 form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
 input.focus();
+
+// "새 대화" — fresh conversation id + reset the thread to the welcome screen
+function newChat() {
+  sessionId = crypto.randomUUID();
+  sessionStorage.setItem("ragui_sid", sessionId);
+  thread.innerHTML = welcomeHTML;
+  renderSuggestions();
+  input.value = ""; input.focus();
+}
+$("#newChatBtn").onclick = newChat;
 
 /* ---------------- Corpus management drawer (no-code ingest / delete) ---------------- */
 const drawer = $("#corpus"), scrim = $("#scrim");

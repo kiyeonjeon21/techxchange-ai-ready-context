@@ -10,9 +10,14 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-import agent    # agent.run(q) -> structured dict
+import agent    # agent.run(q) -> structured dict (in-process Python engine)
 import ingest   # ingest_source / delete_doc / list_docs
 import text2sql # run_text2sql(q) -> {sql, columns, rows, error}
+import langflow_engine  # run(q) -> same shape, orchestrated by the deployed Langflow flow
+
+# Orchestration engine for /api/chat: "langflow" (default) routes through the Langflow agent flow
+# and falls back to the in-process Python agent on error; "python" uses the agent directly.
+RAG_ENGINE = os.environ.get("RAG_ENGINE", "langflow")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
@@ -85,6 +90,7 @@ def login_page():
 
 class ChatReq(BaseModel):
     question: str
+    session_id: str | None = None   # stable per browser conversation -> Langflow multi-turn memory
 
 class IngestReq(BaseModel):
     mode: str = "text"      # 'text' | 'url'
@@ -100,12 +106,19 @@ def healthz():
 
 @app.post("/api/chat")
 def chat(req: ChatReq):
+    q = req.question.strip()
+    if RAG_ENGINE == "langflow":
+        try:
+            return {**langflow_engine.run(q, session_id=req.session_id), "engine": "langflow"}
+        except Exception as e:
+            print(f"[chat] langflow engine failed ({type(e).__name__}: {e}) -> python agent fallback")
     try:
-        return agent.run(req.question.strip())
+        return {**agent.run(q), "engine": "python"}
     except Exception as e:
-        return {"answer": f"**Error:** {type(e).__name__}: {e}",
+        return {"answer": f"**Error:** {type(e).__name__}: {e}", "engine": "error",
                 "route": {"vector": False, "graph": False, "sql": False},
-                "citations": [], "context": {"chunks": [], "kg": {"entities": [], "edges": []}, "sql": []}}
+                "citations": [], "context": {"chunks": [], "kg": {"entities": [], "edges": []},
+                                             "sql": {"query": None, "columns": [], "rows": []}}}
 
 @app.get("/api/docs")
 def docs():

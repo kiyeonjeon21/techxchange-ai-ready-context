@@ -108,6 +108,94 @@ def extract_kg(text, doc_id):
             edges.append({"src": e["src"], "rel": _clean_rel(e.get("rel")), "dst": e["dst"]})
     return ents, edges
 
+def _parse_rows(raw):
+    """Parse an LLM extraction into a list of row dicts. Robust to the model returning either
+    {"rows":[...]}, a bare [...] array, or output wrapped in a ```json fence."""
+    s = (raw or "").strip()
+    m = re.search(r"```(?:json)?\s*(.*?)```", s, re.S | re.I)
+    if m:
+        s = m.group(1).strip()
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict) and isinstance(obj.get("rows"), list):
+            return obj["rows"]
+    except Exception:
+        pass
+    m = re.search(r"\[.*\]", s, re.S)              # first JSON array anywhere
+    if m:
+        try:
+            arr = json.loads(m.group(0))
+            if isinstance(arr, list):
+                return arr
+        except Exception:
+            pass
+    m = re.search(r"\{.*\}", s, re.S)              # or an object with a rows key
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            if isinstance(obj, dict) and isinstance(obj.get("rows"), list):
+                return obj["rows"]
+        except Exception:
+            pass
+    return []
+
+def extract_obligations(text, title):
+    """LLM-extract a small structured table of legal obligations from a regulatory document.
+    Returns rows: {party, obligation, article, penalty_text, penalty_krw}. Non-legal docs
+    (READMEs etc.) typically yield []. This is the SQL tool's document-derived 'third form'."""
+    prompt = (
+        "Extract a table of legal OBLIGATIONS from the Korean regulatory text below. "
+        "Return ONLY compact JSON (no markdown, no prose):\n"
+        '{"rows":[{"party":"의무 주체","obligation":"의무 내용 한 문장","article":"제28조 또는 null",'
+        '"penalty_text":"벌칙/과태료 원문 또는 null","penalty_krw":과태료 상한 금액 KRW 정수 또는 null}]}\n'
+        "Rules:\n"
+        "- party = 의무를 지는 주체(예: 금융회사, 전자금융업자, 개인정보처리자, 신용정보회사). 모르면 null.\n"
+        "- obligation = 의무 내용을 한 문장으로 간결하게.\n"
+        "- article = '제N조' 형태의 근거 조항, 모르면 null.\n"
+        "- penalty_krw = 과태료/벌금 상한 금액이 명시된 경우에만 KRW 정수(예: '1천만원 이하' -> 10000000), "
+        "추측하지 말 것, 없으면 null.\n"
+        "- 의무가 없으면 \"rows\":[]. 최대 12행.\n"
+        f"문서 제목: {title}\n"
+        "Text:\n" + text[:3500])
+    raw = rc.wx_generate(prompt, max_new_tokens=1500)
+    rows = _parse_rows(raw)        # accepts {"rows":[...]} OR a bare [...] array
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        ob = str(r.get("obligation") or "").strip()
+        if not ob:
+            continue
+        pk = r.get("penalty_krw")
+        try:
+            pk = float(pk) if pk not in (None, "", "null") else None
+        except Exception:
+            pk = None
+        clean = lambda v: (str(v).strip() or None) if v not in (None, "null") else None
+        out.append({"party": clean(r.get("party")), "obligation": ob[:500],
+                    "article": clean(r.get("article")), "penalty_text": clean(r.get("penalty_text")),
+                    "penalty_krw": pk})
+        if len(out) >= 12:
+            break
+    return out
+
+def _upsert_obligations(doc_id, title, md):
+    """Extract + load this doc's obligations into Iceberg (best-effort; skipped if Presto off)."""
+    if not rc.PRESTO_HOST:
+        return 0
+    try:
+        obl = extract_obligations(md, title)
+        rows = [{"doc_id": doc_id, "law": title, **o} for o in obl]
+        rc.obligations_ensure()
+        rc.obligations_upsert(doc_id, rows)
+        print(f"[obligations] {len(rows)} rows")
+        return len(rows)
+    except Exception as e:
+        print(f"[obligations] skipped: {str(e)[:120]}")
+        return 0
+
 def resolve_entities(ents, vecs):
     """Two-stage entity resolution: norm_name (1st) + embedding cosine vs the existing KG (2nd,
     computed app-side as this AstraDB lacks server-side ANN). Sets each entity's 'norm' to a
@@ -215,9 +303,11 @@ def ingest_source(source=None, *, title=None, text=None, file_bytes=None, filena
     if rc.PRESTO_HOST:
         try: rc.iceberg_upsert_doc(doc_id, title, source, len(chunks), len(ents), len(edges)); print("[iceberg] corpus upserted")
         except Exception as e: print(f"[iceberg] upsert skipped: {str(e)[:100]}")
+    obligations = _upsert_obligations(doc_id, title, md)   # document-derived structured rows -> Iceberg (text-to-SQL)
     print(f"[done] {doc_id}")
     return {"doc_id": doc_id, "title": title, "source": source,
-            "chunks": len(chunks), "entities": len(ents), "edges": len(edges), "status": "indexed"}
+            "chunks": len(chunks), "entities": len(ents), "edges": len(edges),
+            "obligations": obligations, "status": "indexed"}
 
 def delete_doc(doc_id):
     """Remove a document from every store by doc_id (OpenSearch chunks, AstraDB kg + registry, Iceberg row)."""
@@ -229,6 +319,8 @@ def delete_doc(doc_id):
         try:
             t = f"{rc.PRESTO_CATALOG}.{rc.PRESTO_SCHEMA}.{rc.PRESTO_TABLE}"
             rc.presto_exec(f"DELETE FROM {t} WHERE doc_id='{doc_id}'")
+            ot = f"{rc.PRESTO_CATALOG}.{rc.PRESTO_SCHEMA}.{rc.OBLIG_TABLE}"
+            rc.presto_exec(f"DELETE FROM {ot} WHERE doc_id='{doc_id}'")
         except Exception as e: print(f"[iceberg] delete skipped: {str(e)[:100]}")
     print(f"[deleted] {doc_id}")
     return {"doc_id": doc_id, "status": "deleted"}
@@ -240,10 +332,39 @@ def list_docs():
                     "chunks": d.get("chunks"), "entities": d.get("entities"), "edges": d.get("edges")}
                    for d in docs), key=lambda d: d.get("source") or "")
 
+def _doc_text_from_os(doc_id, limit=30):
+    """Reconstruct a document's text from its OpenSearch chunks (ordered by chunk_no) — lets us
+    backfill obligations for already-indexed docs without re-fetching the original source."""
+    hits = rc._os_hits({"size": limit, "query": {"term": {"doc_id": doc_id}},
+                        "_source": ["text", "chunk_no"]})
+    hits = sorted(hits, key=lambda h: h["_source"].get("chunk_no", 0))
+    return "".join(h["_source"].get("text", "") for h in hits)
+
+def backfill_obligations():
+    """Extract obligations for every already-indexed doc (idempotent). Run once after deploy."""
+    rc.obligations_ensure()
+    total = 0
+    for d in list_docs():
+        doc_id, title = d["doc_id"], d.get("title") or ""
+        txt = _doc_text_from_os(doc_id)
+        if not txt:
+            print(f"[backfill] {title}: no text in OpenSearch, skip"); continue
+        n = _upsert_obligations(doc_id, title, txt)
+        total += n
+        print(f"[backfill] {title}: {n} obligations")
+    print(f"[backfill] done — {total} rows across corpus")
+    return total
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("source"); ap.add_argument("--title", default=None); ap.add_argument("--force", action="store_true")
+    ap.add_argument("source", nargs="?"); ap.add_argument("--title", default=None)
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--backfill-obligations", action="store_true", help="extract obligations for all indexed docs")
     a = ap.parse_args()
+    if a.backfill_obligations:
+        backfill_obligations(); return
+    if not a.source:
+        ap.error("source required (or use --backfill-obligations)")
     print(f"[parse] {a.source}")
     ingest_source(a.source, title=a.title, force=a.force)
 

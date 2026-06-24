@@ -11,15 +11,17 @@ import rag_common as rc
 
 SCHEMA = "aml"
 CATALOG = rc.PRESTO_CATALOG
+DOC_SCHEMA = rc.PRESTO_SCHEMA   # document-derived tables live here (e.g. iceberg_data.rag.obligations)
 MAX_ROWS = 200
 
 # Curated schema card (more accurate + token-cheap than live introspection). Keep table/column
-# names EXACTLY in sync with seed_aml.py. Data covers calendar year 2025.
-SCHEMA_CARD = f"""You write Presto (PrestoDB) SQL for an AML / financial-crime demo lakehouse.
-Catalog.schema is {CATALOG}.{SCHEMA}. Always fully-qualify tables as {CATALOG}.{SCHEMA}.<table>.
-All data covers calendar year 2025 (date columns are SQL DATE).
+# names EXACTLY in sync with seed_aml.py / rag_common.obligations_ensure. AML data covers CY2025.
+# Two domains: (1) the AML business dataset, (2) obligations extracted from the ingested document
+# corpus. Pick the tables that fit the question; never mix the two unless the question truly spans them.
+SCHEMA_CARD = f"""You write Presto (PrestoDB) SQL over a watsonx.data lakehouse with TWO domains.
+Always fully-qualify tables as catalog.schema.table. Date columns are SQL DATE.
 
-Tables:
+Domain A — AML / financial-crime business dataset ({CATALOG}.{SCHEMA}.*), covers calendar year 2025:
 - {CATALOG}.{SCHEMA}.customers(customer_id, name, segment[retail|sme|corporate|private],
     risk_rating[low|medium|high], country[ISO2], onboarded_date date)
 - {CATALOG}.{SCHEMA}.accounts(account_id, customer_id, type[checking|savings|investment],
@@ -29,9 +31,16 @@ Tables:
     counterparty_country[ISO2; KY/VG/PA are high-risk], is_flagged boolean)
 - {CATALOG}.{SCHEMA}.str_reports(str_id, customer_id, filed_date date, reason, amount double,
     status[filed|under_review|closed])  -- Suspicious Transaction Reports (특정금융정보법/STR)
-
 Joins: accounts.customer_id = customers.customer_id; transactions.account_id = accounts.account_id;
 str_reports.customer_id = customers.customer_id.
+
+Domain B — regulatory obligations extracted from the ingested document corpus
+({CATALOG}.{DOC_SCHEMA}.obligations):
+- {CATALOG}.{DOC_SCHEMA}.obligations(doc_id, law[문서/법령 제목], party[의무 주체],
+    obligation[의무 내용], article[근거 조항 예 '제28조'], penalty_text[벌칙/과태료 원문],
+    penalty_krw[과태료 상한 KRW, nullable double])
+Use Domain B for questions about laws/obligations/penalties (의무, 벌칙, 과태료, 조항, 법별 ...).
+Use Domain A for questions about customers/accounts/transactions/STR (고객, 거래, 위험등급 ...).
 """
 
 FEWSHOT = f"""Examples:
@@ -56,6 +65,18 @@ JOIN {CATALOG}.{SCHEMA}.accounts a ON t.account_id = a.account_id
 JOIN {CATALOG}.{SCHEMA}.customers c ON a.customer_id = c.customer_id
 WHERE c.risk_rating = 'high' AND t.is_flagged = true
 GROUP BY t.counterparty_country ORDER BY total_amount DESC LIMIT 5
+
+Q: 법별로 의무가 몇 건씩 추출됐나?
+SQL: SELECT law, count(*) AS obligations FROM {CATALOG}.{DOC_SCHEMA}.obligations
+GROUP BY law ORDER BY obligations DESC
+
+Q: 의무 주체별로 의무가 몇 건인지 많은 순으로?
+SQL: SELECT party, count(*) AS obligations FROM {CATALOG}.{DOC_SCHEMA}.obligations
+WHERE party IS NOT NULL GROUP BY party ORDER BY obligations DESC
+
+Q: 마이데이터 사업자의 의무를 보여줘
+SQL: SELECT law, obligation FROM {CATALOG}.{DOC_SCHEMA}.obligations
+WHERE party LIKE '%마이데이터%' ORDER BY law
 """
 
 _BANNED = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|merge|grant|revoke|"

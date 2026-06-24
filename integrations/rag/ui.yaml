@@ -47,6 +47,11 @@ spec:
             - { name: WXD_API_KEY,  valueFrom: { secretKeyRef: { name: rag-secrets, key: WXD_API_KEY } } }
             # shared-password gate: set this secret key to enable login (unset = open access)
             - { name: APP_PASSWORD, valueFrom: { secretKeyRef: { name: rag-secrets, key: APP_PASSWORD, optional: true } } }
+            # orchestration engine: "langflow" routes /api/chat through the Langflow flow (fallback: python agent)
+            - { name: RAG_ENGINE,         value: "langflow" }
+            - { name: LANGFLOW_URL,       value: "http://langflow.genai-apps.svc.cluster.local:7860" }
+            - { name: LANGFLOW_FLOW_NAME, value: "Agentic RAG + KG (watsonx)" }
+            - { name: LANGFLOW_API_KEY, valueFrom: { secretKeyRef: { name: rag-secrets, key: LANGFLOW_API_KEY, optional: true } } }
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 20

@@ -133,9 +133,11 @@ def route(q):
             "concepts such as 가명정보, 접근매체, 의심거래보고). Default ON for any document/concept question.\n"
             "- graph: relationships or connections between entities (e.g. 'X와 Y의 관계', 감독기관·보고 "
             "대상·적용 대상이 무엇인지, 누가 누구를 규제/감독하는지).\n"
-            "- sql: ONLY the AML business DATASET — customers, accounts, transactions, suspicious-"
-            "transaction reports (STR): counts, sums, amounts, risk ratings, flagged transactions, "
-            "counterparty countries. Do NOT use sql for questions about laws or concepts.\n"
+            "- sql: STRUCTURED/aggregate questions answered by querying tables. Two datasets: "
+            "(A) AML business data — customers, accounts, transactions, STR: counts, sums, amounts, "
+            "risk ratings, flagged transactions, counterparty countries; (B) regulatory OBLIGATIONS "
+            "extracted from the documents — 'law별 의무 건수', '과태료 금액 상위', '의무 주체별' 등 "
+            "건수/집계/금액 비교. Use sql for counting/aggregating, NOT for explaining a concept.\n"
             "When in doubt, set vector true."},
            {"role": "user", "content": q}]
     try:

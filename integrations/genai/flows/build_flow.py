@@ -48,7 +48,9 @@ def spaced(d):
 def edge2(src_id, src_type, out_name, out_types, tgt_id, field, in_types, ttype):
     sh = {"dataType": src_type, "id": src_id, "name": out_name, "output_types": out_types}
     th = {"fieldName": field, "id": tgt_id, "inputTypes": in_types, "type": ttype}
-    sh_s, th_s = spaced(sh), spaced(th)
+    # sourceHandle/targetHandle strings MUST byte-match the canvas handle id (data-handleid),
+    # which Langflow renders WITHOUT spaces — spaced JSON breaks edge binding (renders disconnected).
+    sh_s, th_s = enc_nospace(sh), enc_nospace(th)
     eid = f"xy-edge__{src_id}{enc_nospace(sh)}-{tgt_id}{enc_nospace(th)}"
     return {"data": {"sourceHandle": sh, "targetHandle": th}, "id": eid,
             "source": src_id, "target": tgt_id, "sourceHandle": sh_s, "targetHandle": th_s,
@@ -61,7 +63,7 @@ TOOLS = [
     ("RagGraphTool", "RAG · Knowledge Graph", "/api/tool/graph", "lookup_relationships",
      "1-hop knowledge-graph subgraph (entities + relationships) from AstraDB. Use for relationship/structure questions: who regulates/supervises whom, what an entity's obligations or connections are."),
     ("RagSqlTool", "RAG · text-to-SQL", "/api/tool/sql", "query_business_data",
-     "Generate and run a read-only SQL query over the watsonx.data AML business dataset (customers, accounts, transactions, suspicious-transaction reports). Use for counts, sums, amounts, risk ratings, flagged transactions, countries."),
+     "Generate and run a read-only SQL query over watsonx.data. Two datasets: (A) AML business data (customers, accounts, transactions, suspicious-transaction reports) for counts/sums/amounts/risk ratings/flagged transactions/countries; (B) regulatory obligations extracted from the documents (law, party, obligation, article, penalty) for 'obligations per law', 'highest penalties', 'by obligated party'. Use for any counting/aggregation question."),
 ]
 CODE_TMPL = '''from langflow.custom import Component
 from langflow.io import MessageTextInput, Output
@@ -135,16 +137,31 @@ t["base_url"]["value"] = WX_URL
 WX_MODEL = "ibm/granite-4-h-small"   # granite-3-8b-instruct not in this env's langchain model list
 t["model_name"]["value"] = WX_MODEL
 t["model_name"]["options"] = [WX_MODEL]
+# expose ONLY the LanguageModel output so its handle renders on the canvas (else only text_output shows
+# and the watsonx -> Agent.model edge can't bind / draw)
+_wxn = wx_node["data"]["node"]
+_wxn["outputs"] = [o for o in _wxn.get("outputs", []) if o.get("name") == "model_output"]
 
 # agent config
 agt = ag["data"]["node"]["template"]
 agt["system_prompt"]["value"] = (
-    "You are an agentic RAG assistant over the watsonx stack. You have three tools: "
-    "RAG Vector Search (document passages), RAG Knowledge Graph (entity relationships), and "
-    "RAG text-to-SQL (the AML business dataset). Choose the tool(s) that fit the question — use "
-    "vector for definitions/concepts, the knowledge graph for relationship/structure questions, and "
-    "text-to-SQL for counts/sums/amounts over customers, transactions, or suspicious-transaction reports. "
-    "You may call multiple tools. Ground your answer ONLY in tool results and cite what you used. "
+    "You are an agentic RAG assistant over the watsonx stack. Answer ONLY from your tools — never from "
+    "prior knowledge. Tools:\n"
+    "- search_documents (vector): definitions / concepts / 'what does the document say' questions. "
+    "Pass the user's question VERBATIM as the query — do not paraphrase, shorten, or translate it.\n"
+    "- lookup_relationships (knowledge graph): relationship/structure questions — who regulates / "
+    "supervises / reports to / applies to whom, an entity's links, or questions mentioning "
+    "관계·관련·감독·규제·적용 대상·보고 대상. For these you MUST call lookup_relationships.\n"
+    "- query_business_data (text-to-SQL): counting / aggregation questions over watsonx.data tables — "
+    "(A) AML dataset (customers, accounts, transactions, STR): sums/amounts/risk ratings/flagged/countries; "
+    "(B) obligations extracted from the documents: '법별 의무 건수', '과태료 상위', '의무 주체별' 등 집계.\n"
+    "Rules:\n"
+    "1) Always call at least one tool before answering; you may call several.\n"
+    "2) Treat the returned passages/rows as the ONLY source of truth. If they state a fact (e.g., which "
+    "organization evaluates or supervises something), use EXACTLY that fact — even if it contradicts what "
+    "you think you already know.\n"
+    "3) NEVER introduce names, organizations, numbers, or facts that do not appear in the tool results.\n"
+    "4) If the tool results do not contain the answer, say the corpus does not cover it — do not guess.\n"
     "Answer in the user's language (Korean question -> Korean answer).")
 
 nodes = [ci, wx_node, ag, co] + tool_nodes
@@ -152,8 +169,8 @@ nodes = [ci, wx_node, ag, co] + tool_nodes
 # ---- 4) edges ----
 edges = [
     edge2(ci_id, "ChatInput", "message", ["Message"], ag_id, "input_value", ["Message"], "str"),
-    edge2(wx_id, "IBMwatsonxModel", "model_output", ["LanguageModel"], ag_id, "model", ["LanguageModel"], "other"),
-    edge2(ag_id, "Agent", "response", ["Message"], co_id, "input_value", ["Data", "DataFrame", "Message"], "str"),
+    edge2(wx_id, "IBMwatsonxModel", "model_output", ["LanguageModel"], ag_id, "model", ["LanguageModel"], "model"),
+    edge2(ag_id, "Agent", "response", ["Message"], co_id, "input_value", ["Data", "DataFrame", "Message"], "other"),
 ]
 for tn in tool_nodes:
     edges.append(edge2(tn["id"], tn["data"]["type"], "component_as_tool", ["Tool"], ag_id, "tools", ["Tool"], "other"))
