@@ -42,6 +42,17 @@ def load_source(source):
             return f.read()
     return parse_docling(source)
 
+def clean_md(md):
+    """Strip non-text noise from converted markdown so chunks/embeddings/preview stay clean:
+    - docling image placeholders (<!-- 🖼️❌ Image not available... -->) and any HTML comments
+    - markdown images ![alt](url) -> keep alt text only (drop badge/screenshot URLs)
+    - leftover empty markdown links []() and runs of blank lines"""
+    s = re.sub(r"<!--.*?-->", "", md or "", flags=re.S)          # HTML comments (incl. docling image placeholder)
+    s = re.sub(r"!\[([^\]]*)\]\([^)]*\)", lambda m: m.group(1), s)  # images -> alt text
+    s = re.sub(r"\[\s*\]\([^)]*\)", "", s)                        # empty-text links left over
+    s = re.sub(r"[ \t]+\n", "\n", s)                             # trailing spaces
+    return re.sub(r"\n{3,}", "\n\n", s).strip()
+
 def chunk(md, size=640, overlap=120):   # ~<450 tokens/chunk for Korean (granite-embed cap = 512)
     md = re.sub(r"\n{3,}", "\n\n", md).strip()
     out, i = [], 0
@@ -248,6 +259,7 @@ def ingest_source(source=None, *, title=None, text=None, file_bytes=None, filena
         md = load_source(source)
     else:
         raise ValueError("provide one of: text, file_bytes, source")
+    md = clean_md(md)                       # strip image placeholders / HTML comments before all stores
     title = title or source.rsplit("/", 1)[-1]
     doc_id = hashlib.sha1(source.encode()).hexdigest()[:16]
 

@@ -214,13 +214,16 @@ async function loadDocs() {
     const docs = data.docs || [];
     docCount.textContent = docs.length;
     docList.innerHTML = docs.length ? docs.map(d => `
-      <div class="doc">
-        <div class="doc-main">
-          <div class="doc-title">${esc(d.title)}</div>
-          <div class="doc-meta">${esc(d.source)}</div>
-          <div class="doc-stats">chunks ${d.chunks ?? "–"} · ent ${d.entities ?? "–"} · edge ${d.edges ?? "–"}</div>
+      <div class="doc-item">
+        <div class="doc">
+          <div class="doc-main" data-id="${esc(d.doc_id)}" role="button" tabindex="0" title="클릭하여 내용 보기">
+            <div class="doc-title">${esc(d.title)}<span class="doc-chev">▸</span></div>
+            <div class="doc-meta">${esc(d.source)}</div>
+            <div class="doc-stats">chunks ${d.chunks ?? "–"} · ent ${d.entities ?? "–"} · edge ${d.edges ?? "–"}</div>
+          </div>
+          <button class="doc-del" data-id="${esc(d.doc_id)}" title="삭제">🗑</button>
         </div>
-        <button class="doc-del" data-id="${esc(d.doc_id)}" title="삭제">🗑</button>
+        <div class="doc-preview" id="prev-${esc(d.doc_id)}" hidden></div>
       </div>`).join("") : `<div class="dl-empty">아직 적재된 문서가 없습니다.</div>`;
   } catch (e) {
     docList.innerHTML = `<div class="dl-empty">목록 오류: ${esc(e.message)}</div>`;
@@ -236,6 +239,38 @@ docList.addEventListener("click", async (e) => {
       body: JSON.stringify({ doc_id: b.dataset.id }) })).json();
     if (r.ok) { toast("삭제됨"); loadDocs(); } else { toast("삭제 실패: " + r.error, false); b.disabled = false; b.textContent = "🗑"; }
   } catch (err) { toast("삭제 오류: " + err.message, false); b.disabled = false; b.textContent = "🗑"; }
+});
+
+function docPreviewHTML(d) {
+  const src = (d.source ? `<div class="dp-src">${srcCell({ source: d.source, title: d.title })}</div>` : "");
+  const pdf = d.pdf_url ? `<div class="dp-pdf">
+      <a class="dp-pdflink" href="${esc(d.pdf_url)}" target="_blank" rel="noopener">📄 원문 PDF 새 탭으로 열기 ↗</a>
+      <embed class="dp-embed" src="${esc(d.pdf_url)}#toolbar=0&navpanes=0" type="application/pdf" />
+    </div>` : "";
+  const ents = (d.entities || []).length
+    ? `<div class="dp-ents">${d.entities.slice(0, 30).map(e => `<span class="dp-ent">${esc(e)}</span>`).join("")}</div>` : "";
+  const chunks = (d.chunks || []).map(c =>
+    `<div class="dp-chunk"><span class="dp-no">#${c.chunk_no}</span><div class="dp-txt">${esc(c.text)}</div></div>`).join("");
+  return src + pdf + ents + `<div class="dp-chunks">${chunks || '<div class="dl-empty">내용 없음</div>'}</div>`;
+}
+
+// click a doc row -> toggle an inline preview (chunks + KG entities), lazy-loaded once
+docList.addEventListener("click", async (e) => {
+  const main = e.target.closest(".doc-main"); if (!main) return;
+  const id = main.dataset.id;
+  const prev = document.getElementById("prev-" + id);
+  if (!prev) return;
+  const open = prev.hidden;
+  main.classList.toggle("open", open);
+  prev.hidden = !open;
+  if (open && !prev.dataset.loaded) {
+    prev.innerHTML = `<div class="dl-empty">불러오는 중…</div>`;
+    try {
+      const d = await (await fetch("/api/doc/" + encodeURIComponent(id))).json();
+      if (d.ok) { prev.innerHTML = docPreviewHTML(d); prev.dataset.loaded = "1"; }
+      else prev.innerHTML = `<div class="dl-empty">미리보기 오류: ${esc(d.error)}</div>`;
+    } catch (err) { prev.innerHTML = `<div class="dl-empty">미리보기 오류: ${esc(err.message)}</div>`; }
+  }
 });
 
 addBtn.addEventListener("click", async () => {

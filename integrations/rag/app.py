@@ -14,6 +14,7 @@ import agent    # agent.run(q) -> structured dict (in-process Python engine)
 import ingest   # ingest_source / delete_doc / list_docs
 import text2sql # run_text2sql(q) -> {sql, columns, rows, error}
 import langflow_engine  # run(q) -> same shape, orchestrated by the deployed Langflow flow
+import rag_common as rc  # OpenSearch / AstraDB clients (doc preview)
 
 # Orchestration engine for /api/chat: "langflow" (default) routes through the Langflow agent flow
 # and falls back to the in-process Python agent on error; "python" uses the agent directly.
@@ -22,6 +23,7 @@ RAG_ENGINE = os.environ.get("RAG_ENGINE", "langflow")
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 CORPUS = "/corpus"   # rag-corpus ConfigMap mount (authored md sources)
+CORPUS_PDF = "/corpus-pdf"   # rag-corpus-pdf ConfigMap mount (original PDFs, for preview)
 app = FastAPI(title="Agentic RAG + KG")
 
 # ---- shared-password gate (signed session cookie) ----
@@ -127,6 +129,34 @@ def docs():
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}", "docs": []}
 
+@app.get("/api/doc/{doc_id}")
+def doc_detail(doc_id: str):
+    """Preview an ingested doc for the corpus drawer: its chunks (text, from OpenSearch) + KG
+    entity names (from AstraDB). Lets users see what's actually indexed, not just the title."""
+    try:
+        hits = rc._os_hits({"size": 60, "query": {"term": {"doc_id": doc_id}},
+                            "_source": ["text", "chunk_no", "title", "source"]})
+        hits = sorted(hits, key=lambda h: h["_source"].get("chunk_no", 0))
+        src = hits[0]["_source"] if hits else {}
+        chunks = [{"chunk_no": h["_source"].get("chunk_no"), "text": h["_source"].get("text", "")} for h in hits]
+        ents = []
+        try:
+            kg = rc.astra_find_all(rc.ASTRA_KG, {"kind": "entity", "doc_id": doc_id})
+            ents = sorted({(e.get("name") or "").strip() for e in kg if e.get("name")})
+        except Exception:
+            pass
+        # if the original PDF is available (mounted from rag-corpus-pdf), expose a viewer URL
+        source = src.get("source") or ""
+        pdf_url = None
+        if source.lower().endswith(".pdf"):
+            base = os.path.basename(source.split(":", 1)[-1])
+            if os.path.isfile(os.path.join(CORPUS_PDF, base)):
+                pdf_url = f"/corpus-pdf/{base}"
+        return {"ok": True, "doc_id": doc_id, "title": src.get("title"), "source": source,
+                "chunks": chunks, "entities": ents, "pdf_url": pdf_url}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
 @app.post("/api/ingest")
 def ingest_text_or_url(req: IngestReq):
     try:
@@ -198,6 +228,14 @@ def corpus_file(fname: str):
         raise HTTPException(status_code=404, detail="not found")
     with open(p, encoding="utf-8") as f:
         return PlainTextResponse(f.read(), media_type="text/plain; charset=utf-8")
+
+@app.get("/corpus-pdf/{fname}")
+def corpus_pdf(fname: str):
+    """Serve an original corpus PDF (rag-corpus-pdf mount) for inline preview in the drawer."""
+    p = os.path.join(CORPUS_PDF, os.path.basename(fname))   # basename: no path traversal
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(p, media_type="application/pdf")
 
 @app.get("/")
 def index():

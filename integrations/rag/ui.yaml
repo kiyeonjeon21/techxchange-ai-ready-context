@@ -61,6 +61,7 @@ spec:
             - { name: code,   mountPath: /code }
             - { name: static, mountPath: /static-src }
             - { name: corpus, mountPath: /corpus }
+            - { name: corpus-pdf, mountPath: /corpus-pdf }   # original PDFs for in-drawer preview
           resources:
             requests: { cpu: 200m, memory: 384Mi }
             limits:   { cpu: "1",  memory: 1Gi }
@@ -71,6 +72,12 @@ spec:
           configMap: { name: rag-static }
         - name: corpus
           configMap: { name: rag-corpus }
+        # binary PDFs served at /corpus-pdf/{name} (doc preview). Create with:
+        #   oc -n genai-apps create configmap rag-corpus-pdf \
+        #     --from-file=aml.pdf=corpus_pdf/06_특정금융정보법.pdf \
+        #     --from-file=credit.pdf=corpus_pdf/02_신용정보법.pdf
+        - name: corpus-pdf
+          configMap: { name: rag-corpus-pdf }
 ---
 apiVersion: v1
 kind: Service
